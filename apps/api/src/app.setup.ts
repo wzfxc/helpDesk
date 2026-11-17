@@ -15,10 +15,10 @@ export function configureApp(app: INestApplication, trustProxy = DEFAULT_TRUST_P
   http.set('trust proxy', trustProxy);
   http.disable('x-powered-by');
 
-  // Every JSON / urlencoded endpoint is capped at 256 KB (413 payload_too_large); only the
-  // multipart POST /attachments may carry up to 10 MiB and is not touched by these parsers.
+  // Every JSON endpoint is capped at 256 KB (413 payload_too_large); only the multipart
+  // POST /attachments may carry up to 10 MiB and is not touched by this parser. There is
+  // deliberately NO urlencoded parser: form posts (the CSRF-able content type) are never parsed.
   const json = express.json({ limit: LIMITS.jsonBodyMaxBytes });
-  const urlencoded = express.urlencoded({ extended: false, limit: LIMITS.jsonBodyMaxBytes });
   // Body parser errors (malformed JSON, too large) never reach Nest filters: convert them here.
   app.use((req: Request, res: Response, next: NextFunction) => {
     json(req, res, (err?: unknown) => {
@@ -26,13 +26,7 @@ export function configureApp(app: INestApplication, trustProxy = DEFAULT_TRUST_P
         sendApiError(res, toApiError(err));
         return;
       }
-      urlencoded(req, res, (err2?: unknown) => {
-        if (err2) {
-          sendApiError(res, toApiError(err2));
-          return;
-        }
-        next();
-      });
+      next();
     });
   });
   app.use(cookieParser());

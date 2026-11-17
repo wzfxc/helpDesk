@@ -132,6 +132,21 @@ describe('attachment count and binding', () => {
     expect((await upload(w.as.customer2, PNG, 'ok.png')).status).toBe(201);
   });
 
+  it('parallel uploads cannot overshoot the quota', async () => {
+    const results = await Promise.all(
+      Array.from({ length: LIMITS.unboundAttachmentsMax + 8 }, (_, i) =>
+        upload(w.as.customer, PNG, `p${i.toString()}.png`),
+      ),
+    );
+    expect(results.filter((r) => r.status === 201)).toHaveLength(LIMITS.unboundAttachmentsMax);
+    expect(results.filter((r) => r.status === 422)).toHaveLength(8);
+    const left = await ctx.pool.query<{ n: string }>(
+      'select count(*)::text as n from attachments where uploader_id = $1',
+      [w.customer.id],
+    );
+    expect(Number(left.rows[0]?.n)).toBe(LIMITS.unboundAttachmentsMax);
+  });
+
   it('caps unattached uploads per user (bytes)', async () => {
     const chunk = text(LIMITS.attachmentMaxBytes);
     const n = Math.floor(LIMITS.unboundAttachmentsMaxBytes / chunk.length);
@@ -177,7 +192,14 @@ describe('JSON body limit (every endpoint except POST /attachments)', () => {
       .post('/auth/login')
       .set('Content-Type', 'application/x-www-form-urlencoded')
       .send(`a=${'x'.repeat(LIMITS.jsonBodyMaxBytes + 1)}`);
-    expect(form.status).toBe(413);
+    // form posts are never parsed (CSRF-able content type): the credentials are not read at all
+    expect(form.status).toBe(400);
+    expect(form.body.error.code).toBe('validation_error');
+    const forged = await ctx.http
+      .post('/auth/login')
+      .set('Content-Type', 'application/x-www-form-urlencoded')
+      .send('email=a@b.co&password=x');
+    expect(forged.status).toBe(400);
   });
 
   it('a body just under the limit still reaches validation (400, not 413)', async () => {

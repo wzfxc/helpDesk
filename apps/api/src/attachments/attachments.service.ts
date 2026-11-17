@@ -9,7 +9,7 @@ import type { AuthUser } from '../auth/auth.types.js';
 import { APP_CONFIG, type AppConfig } from '../config.js';
 import { Clock } from '../common/clock.js';
 import { ApiError, badRequest, notFound } from '../common/errors.js';
-import { DB, type Db } from '../db/db.js';
+import { DB, type Db, type DbOrTx } from '../db/db.js';
 import { attachments } from '../db/schema.js';
 import { messageVisibility, ticketScope } from '../tickets/ticket-access.js';
 import { detectMimeType, sanitizeFilename } from './detect-type.js';
@@ -59,7 +59,6 @@ export class AttachmentsService implements OnModuleInit {
       );
     }
     if (file.size === 0) throw badRequest('File is empty');
-    await this.assertQuota(user.id, file.size);
     const mimeType = detectMimeType(file.buffer);
     if (!mimeType) {
       throw new ApiError(
@@ -71,17 +70,24 @@ export class AttachmentsService implements OnModuleInit {
     const storageKey = randomUUID();
     await writeFile(this.filePath(storageKey), file.buffer, { flag: 'wx' });
     try {
-      const [row] = await this.db
-        .insert(attachments)
-        .values({
-          uploaderId: user.id,
-          filename: sanitizeFilename(file.originalname, LIMITS.attachmentFilenameMax),
-          mimeType,
-          size: file.size,
-          storageKey,
-          createdAt: this.clock.now(),
-        })
-        .returning();
+      // Quota check and insert are one transaction under a per-user advisory lock, so parallel
+      // uploads cannot all pass the check and overshoot the quota.
+      const row = await this.db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'upload:' + user.id}))`);
+        await this.assertQuota(tx, user.id, file.size);
+        const [inserted] = await tx
+          .insert(attachments)
+          .values({
+            uploaderId: user.id,
+            filename: sanitizeFilename(file.originalname, LIMITS.attachmentFilenameMax),
+            mimeType,
+            size: file.size,
+            storageKey,
+            createdAt: this.clock.now(),
+          })
+          .returning();
+        return inserted;
+      });
       if (!row) throw new Error('attachment insert failed');
       return { id: row.id, filename: row.filename, mimeType: row.mimeType, size: row.size };
     } catch (err) {
@@ -91,8 +97,8 @@ export class AttachmentsService implements OnModuleInit {
   }
 
   /** Uploaded-but-unattached files per user are capped so one client cannot fill the disk. */
-  private async assertQuota(userId: string, incomingBytes: number): Promise<void> {
-    const res = await this.db.execute<{ n: string; bytes: string }>(sql`
+  private async assertQuota(db: DbOrTx, userId: string, incomingBytes: number): Promise<void> {
+    const res = await db.execute<{ n: string; bytes: string }>(sql`
       select count(*)::text as n, coalesce(sum(size), 0)::text as bytes
       from attachments where uploader_id = ${userId} and message_id is null`);
     const row = res.rows[0];
