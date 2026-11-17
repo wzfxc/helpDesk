@@ -1,8 +1,23 @@
+import path from 'node:path';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  esbuild: {
+    jsx: 'automatic',
+  },
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, 'src'),
+    },
+  },
   test: {
+    environment: 'jsdom',
+    setupFiles: ['./test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}', 'test/**/*.test.{ts,tsx}'],
-    passWithNoTests: true,
+    server: {
+      deps: {
+        inline: ['@testing-library/jest-dom'],
+      },
+    },
   },
 });
