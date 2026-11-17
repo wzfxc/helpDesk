@@ -222,3 +222,30 @@ describe('SidePanel', () => {
     expect(qc.getQueryData<TicketDetail>(['ticket', TICKET.id])?.ticket.version).toBe(3);
   });
 });
+
+describe('closed ticket (staff)', () => {
+  const CLOSED: Ticket = { ...TICKET, status: 'closed', closedAt: '2026-01-04T10:00:00.000Z' };
+
+  it('composer shows a translated explanation, not the raw status', async () => {
+    renderWithProviders(<Composer ticket={CLOSED} me={AGENT} />);
+    const notice = await screen.findByTestId('closed-staff-notice');
+    expect(notice).toHaveTextContent('This ticket is closed: replies are disabled');
+    expect(notice).not.toHaveTextContent(/^closed$/);
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+
+  it('side panel makes every field read-only and explains why', () => {
+    renderWithProviders(<SidePanel ticket={CLOSED} me={AGENT} />);
+    for (const label of ['Status', 'Priority', 'Category', 'Tags']) {
+      expect(screen.getByLabelText(label)).toBeDisabled();
+    }
+    const note = screen.getByText(/Closed tickets are read-only/);
+    expect(screen.getByLabelText('Status')).toHaveAttribute('aria-describedby', note.id);
+  });
+
+  it('side panel stays editable for an open ticket', () => {
+    renderWithProviders(<SidePanel ticket={TICKET} me={AGENT} />);
+    expect(screen.getByLabelText('Status')).toBeEnabled();
+    expect(screen.queryByText(/Closed tickets are read-only/)).not.toBeInTheDocument();
+  });
+});

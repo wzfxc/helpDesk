@@ -103,6 +103,7 @@
     "ratingComment": "Comment (optional)",
     "ratingSubmit": "Send rating",
     "ratingThanks": "Thank you for your feedback!",
+    "closedReadonly": "Closed tickets are read-only: status, priority, category, assignee and tags cannot be changed.",
     "closedNotice": "This ticket is closed. A reply will create a new ticket linked to it."
   },
   "timeline": {
@@ -121,6 +122,7 @@
     "attachments": "Attachments"
   },
   "composer": {
+    "closedStaff": "This ticket is closed: replies are disabled. Only the customer can start a new linked ticket.",
     "label": "Reply",
     "modeReply": "Reply to customer",
     "modeNote": "Internal note",

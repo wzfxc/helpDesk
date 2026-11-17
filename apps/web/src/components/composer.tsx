@@ -140,7 +140,11 @@ export function Composer({ ticket, me }: { ticket: Ticket; me: Me }) {
   if (!draft) return null;
   const closed = ticket.status === 'closed';
   if (closed && staff) {
-    return <p className="text-sm text-slate-700 dark:text-slate-300">{ticket.status}</p>;
+    return (
+      <p className="text-sm text-slate-700 dark:text-slate-300" data-testid="closed-staff-notice">
+        {t('closedStaff')}
+      </p>
+    );
   }
   const note = staff && draft.mode === 'note';
   const canSend = draft.body.trim() !== '' && !send.isPending && !uploads.busy;

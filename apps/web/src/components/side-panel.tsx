@@ -110,6 +110,12 @@ export function SidePanel({ ticket, me }: { ticket: Ticket; me: Me }) {
         </div>
       ) : null}
 
+      {closed ? (
+        <p id="sp-closed-note" className="text-sm text-slate-700 dark:text-slate-300">
+          {t('ticket.closedReadonly')}
+        </p>
+      ) : null}
+
       <div className={row}>
         <label htmlFor="sp-status">{t('ticket.status')}</label>
         <select
@@ -117,6 +123,7 @@ export function SidePanel({ ticket, me }: { ticket: Ticket; me: Me }) {
           className={inputClass}
           value={ticket.status}
           disabled={closed || patch.isPending}
+          aria-describedby={closed ? 'sp-closed-note' : undefined}
           onChange={(e) => {
             patch.mutate({ status: e.target.value as Status });
           }}
@@ -135,6 +142,7 @@ export function SidePanel({ ticket, me }: { ticket: Ticket; me: Me }) {
           className={inputClass}
           value={ticket.priority}
           disabled={closed || patch.isPending}
+          aria-describedby={closed ? 'sp-closed-note' : undefined}
           onChange={(e) => {
             patch.mutate({ priority: e.target.value as Priority });
           }}
@@ -153,6 +161,7 @@ export function SidePanel({ ticket, me }: { ticket: Ticket; me: Me }) {
           className={inputClass}
           value={ticket.category}
           disabled={closed || patch.isPending}
+          aria-describedby={closed ? 'sp-closed-note' : undefined}
           onChange={(e) => {
             patch.mutate({ category: e.target.value as Category });
           }}
@@ -172,6 +181,7 @@ export function SidePanel({ ticket, me }: { ticket: Ticket; me: Me }) {
             className={inputClass}
             value={ticket.assignee?.id ?? ''}
             disabled={closed || patch.isPending}
+            aria-describedby={closed ? 'sp-closed-note' : undefined}
             onChange={(e) => {
               patch.mutate({ assigneeId: e.target.value || null });
             }}
@@ -205,7 +215,7 @@ export function SidePanel({ ticket, me }: { ticket: Ticket; me: Me }) {
           id="sp-tags"
           className={inputClass}
           disabled={closed}
-          aria-describedby="sp-tags-hint"
+          aria-describedby={closed ? 'sp-closed-note sp-tags-hint' : 'sp-tags-hint'}
           value={tagText ?? ticket.tags.join(', ')}
           onChange={(e) => {
             setTagText(e.target.value);
