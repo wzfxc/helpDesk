@@ -55,4 +55,3 @@ test('i18n: uk/en locale switching, pluralization, relative time and composer fo
   await expect(agent.page.locator('html')).toHaveAttribute('lang', 'en');
   await expect(agent.page.getByRole('button', { name: 'Send to customer' })).toBeVisible();
 });
-
