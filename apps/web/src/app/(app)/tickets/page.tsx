@@ -50,7 +50,7 @@ export default function MyTicketsPage() {
               <span className={ticket.unread ? 'font-semibold' : ''}>{ticket.subject}</span>
               <StatusBadge status={ticket.status} />
               {ticket.unread ? (
-                <span className="rounded bg-blue-700 px-2 py-0.5 text-xs font-semibold text-white dark:bg-blue-500">
+                <span className="rounded bg-blue-700 px-2 py-0.5 text-xs font-semibold text-white">
                   {t('customer.unread')}
                 </span>
               ) : null}

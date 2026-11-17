@@ -44,6 +44,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(
       customer.page.getByRole('heading', { level: 1, name: 'My tickets' }),
     ).toBeVisible();
+    await expect(customer.page.getByText(`HD-${ticket.number}`)).toBeVisible();
     await expectNoAxeViolations(customer.page, `/tickets (${colorScheme})`);
 
     await customer.page.goto('/tickets/new');
