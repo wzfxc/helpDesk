@@ -7,6 +7,10 @@ import {
   type CreateMessage,
   type CreateMessageResponse,
   IdSchema,
+  BulkRequestSchema,
+  BulkResponseSchema,
+  type BulkRequest,
+  type BulkResponse,
   TicketListQuerySchema,
   TicketListResponseSchema,
   type TicketListQuery,
@@ -27,6 +31,7 @@ import { CurrentUser, Roles } from '../auth/decorators.js';
 import { ApiZodBody, ApiZodQuery, ApiZodResponse } from '../common/openapi.js';
 import { zod } from '../common/zod.pipe.js';
 import { MessagesService } from './messages.service.js';
+import { QueueService } from './queue.service.js';
 import { TicketsService } from './tickets.service.js';
 
 @ApiTags('tickets')
@@ -35,7 +40,30 @@ export class TicketsController {
   constructor(
     private readonly tickets: TicketsService,
     private readonly messages: MessagesService,
+    private readonly queue: QueueService,
   ) {}
+
+  /** Assigns the most urgent free ticket of the caller's categories (404 no_tickets_available). */
+  @Post('take-next')
+  @Roles('agent', 'lead')
+  @HttpCode(200)
+  @ApiZodResponse(200, TicketSchema)
+  takeNext(@CurrentUser() user: AuthUser): Promise<Ticket> {
+    return this.queue.takeNext(user);
+  }
+
+  /** Up to 200 tickets; per-ticket result with skip reasons. */
+  @Post('bulk')
+  @Roles('agent', 'lead')
+  @HttpCode(200)
+  @ApiZodBody(BulkRequestSchema)
+  @ApiZodResponse(200, BulkResponseSchema)
+  bulk(
+    @CurrentUser() user: AuthUser,
+    @Body(zod(BulkRequestSchema)) body: BulkRequest,
+  ): Promise<BulkResponse> {
+    return this.queue.bulk(user, body);
+  }
 
   @Post()
   @Roles('customer')
