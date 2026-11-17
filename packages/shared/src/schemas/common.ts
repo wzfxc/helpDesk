@@ -4,8 +4,16 @@ import { LIMITS } from '../limits';
 export const IdSchema = z.uuid();
 export const IsoDateTimeSchema = z.iso.datetime({ offset: true });
 
+/**
+ * Base string: PostgreSQL text cannot store U+0000 (it would surface as a 500),
+ * so every user-supplied string rejects it with a 400 validation_error.
+ */
+export const safeString = () =>
+  z.string().refine((s) => !s.includes('\u0000'), 'Must not contain NUL characters');
+
 /** Trimmed, non-empty string with an upper bound. */
-export const text = (max: number, min = 1) => z.string().trim().min(min).max(max);
+export const text = (max: number, min = 1) =>
+  safeString().pipe(z.string().trim().min(min).max(max));
 
 export const TagSchema = z
   .string()

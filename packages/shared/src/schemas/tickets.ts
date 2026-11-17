@@ -17,6 +17,7 @@ import {
   UserRefSchema,
   queryBoolean,
   queryList,
+  safeString,
   text,
 } from './common';
 
@@ -61,7 +62,7 @@ export type UpdateTicket = z.infer<typeof UpdateTicketSchema>;
 
 export const RatingInputSchema = z.object({
   score: z.number().int().min(1).max(5),
-  comment: z.string().trim().max(LIMITS.ratingCommentMax).optional(),
+  comment: text(LIMITS.ratingCommentMax, 0).optional(),
 });
 export type RatingInput = z.infer<typeof RatingInputSchema>;
 
@@ -181,14 +182,14 @@ export const TicketFiltersSchema = z.object({
   tags: queryList(TagSchema),
   createdFrom: IsoDateTimeSchema.optional(),
   createdTo: IsoDateTimeSchema.optional(),
-  q: z.string().trim().max(LIMITS.searchQueryMax).optional(),
+  q: text(LIMITS.searchQueryMax, 0).optional(),
   sort: TicketSortSchema.optional(),
 });
 export type TicketFilters = z.infer<typeof TicketFiltersSchema>;
 export type TicketFiltersInput = z.input<typeof TicketFiltersSchema>;
 
 export const TicketListQuerySchema = TicketFiltersSchema.extend({
-  cursor: z.string().max(1000).optional(),
+  cursor: safeString().pipe(z.string().max(LIMITS.cursorMax)).optional(),
   limit: z.coerce.number().int().min(1).max(LIMITS.pageSizeMax).default(LIMITS.pageSizeDefault),
 });
 export type TicketListQuery = z.infer<typeof TicketListQuerySchema>;

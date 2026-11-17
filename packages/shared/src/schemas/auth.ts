@@ -1,11 +1,11 @@
 import { z } from 'zod';
 import { CategorySchema, RoleSchema } from '../enums';
 import { LIMITS } from '../limits';
-import { IdSchema } from './common';
+import { IdSchema, safeString } from './common';
 
 export const LoginRequestSchema = z.object({
-  email: z.string().trim().toLowerCase().max(LIMITS.emailMax).pipe(z.email()),
-  password: z.string().min(1).max(LIMITS.passwordMax),
+  email: safeString().pipe(z.string().trim().toLowerCase().max(LIMITS.emailMax).pipe(z.email())),
+  password: safeString().pipe(z.string().min(1).max(LIMITS.passwordMax)),
 });
 export type LoginRequest = z.infer<typeof LoginRequestSchema>;
 

@@ -21,6 +21,16 @@ const STATUS_CODES: Record<number, ErrorCode> = {
   429: 'rate_limited',
 };
 
+/** SQLSTATE of a pg error, also when wrapped by drizzle (`cause`). */
+function pgErrorCode(err: unknown): string | undefined {
+  for (let e: unknown = err, depth = 0; typeof e === 'object' && e !== null && depth < 4; depth++) {
+    const code = (e as { code?: unknown }).code;
+    if (typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code)) return code;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
 /** Maps any thrown value to the unified error body. */
 export function toApiError(exception: unknown): ApiError {
   if (exception instanceof ApiError) return exception;
@@ -29,6 +39,12 @@ export function toApiError(exception: unknown): ApiError {
     if (status < 500) {
       return new ApiError(status, STATUS_CODES[status] ?? 'bad_request', exception.message);
     }
+  }
+  // PostgreSQL "data exception" (SQLSTATE class 22: 22021 invalid byte sequence / NUL,
+  // 22P05, 22P02, 22001 ...) is caused by client input that slipped past validation: 400.
+  const pgCode = pgErrorCode(exception);
+  if (pgCode?.startsWith('22')) {
+    return new ApiError(400, 'validation_error', 'Request contains invalid characters or values');
   }
   // body-parser / busboy style errors carry a client status
   if (typeof exception === 'object' && exception !== null && 'status' in exception) {

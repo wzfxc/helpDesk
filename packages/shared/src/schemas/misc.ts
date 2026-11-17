@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { CategorySchema, NotificationKindSchema, PrioritySchema } from '../enums';
 import { LIMITS } from '../limits';
-import { IdSchema, IsoDateTimeSchema, text } from './common';
+import { IdSchema, IsoDateTimeSchema, safeString, text } from './common';
 import { TicketFiltersSchema } from './tickets';
 
 // ---------- Notifications ----------
@@ -77,9 +77,8 @@ export type SavedView = z.infer<typeof SavedViewSchema>;
 
 export const CreateSavedViewSchema = z.object({
   name: text(LIMITS.viewNameMax),
-  query: z
-    .string()
-    .max(2000)
+  query: safeString()
+    .pipe(z.string().max(LIMITS.savedViewQueryMax))
     .refine((q) => {
       const params = new URLSearchParams(q);
       const obj: Record<string, string> = {};

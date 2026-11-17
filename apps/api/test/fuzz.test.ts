@@ -86,6 +86,79 @@ describe('no 5xx on malformed input', () => {
     }
   });
 
+  it('NUL byte inside every string field is a 400, never 5xx', async () => {
+    const NUL = 'a\u0000b';
+    const t = await createTicket(w.as.customer);
+    const closed = await createTicket(w.as.customer);
+    expect(closed.id).toBeTruthy();
+    const cases: [string, string, Record<string, unknown>, 'customer' | 'billingAgent' | 'lead'][] =
+      [
+        [
+          'post',
+          '/tickets',
+          { subject: NUL, category: 'billing', priority: 'low', body: 'ok' },
+          'customer',
+        ],
+        [
+          'post',
+          '/tickets',
+          { subject: 's', category: 'billing', priority: 'low', body: NUL },
+          'customer',
+        ],
+        [
+          'post',
+          `/tickets/${t.id}/messages`,
+          { clientMessageId: randomUUID(), body: NUL },
+          'customer',
+        ],
+        [
+          'post',
+          `/tickets/${t.id}/messages`,
+          { clientMessageId: randomUUID(), body: NUL, internal: true },
+          'billingAgent',
+        ],
+        ['post', `/tickets/${t.id}/rating`, { score: 5, comment: NUL }, 'customer'],
+        ['patch', `/tickets/${t.id}`, { version: 1, tags: [NUL] }, 'billingAgent'],
+        [
+          'post',
+          '/tickets/bulk',
+          { ids: [t.id], action: { type: 'tags', add: [NUL], remove: [] } },
+          'lead',
+        ],
+        ['post', '/canned-responses', { title: NUL, body: 'x' }, 'lead'],
+        ['post', '/canned-responses', { title: 'x', body: NUL }, 'lead'],
+        ['post', '/views', { name: NUL, query: '' }, 'lead'],
+        ['post', '/views', { name: 'v', query: NUL }, 'lead'],
+        ['post', '/auth/login', { email: NUL, password: 'x' }, 'customer'],
+        ['post', '/auth/login', { email: 'a@b.co', password: NUL }, 'customer'],
+      ];
+    for (const [method, url, body, who] of cases) {
+      const res = await w.as[who][method as 'post' | 'patch'](url).send(body);
+      expect(res.status, `${method} ${url} ${JSON.stringify(body)}`).toBe(400);
+      expect(res.body.error.code).toBe('validation_error');
+    }
+    for (const q of ['q', 'cursor', 'tags', 'assignee', 'status']) {
+      const res = await w.as.lead.get('/tickets').query({ [q]: NUL });
+      expect(res.status, q).toBeLessThan(500);
+    }
+    const up = await w.as.customer
+      .post('/attachments')
+      .attach('file', Buffer.from('hello'), {
+        filename: 'a\u0000b.txt',
+        contentType: 'text/plain',
+      });
+    expect(up.status).toBeLessThan(500);
+  });
+
+  it('PostgreSQL class 22 errors are mapped to 400', async () => {
+    const { toApiError } = await import('../src/common/error.filter.js');
+    for (const code of ['22021', '22P05', '22P02', '22001']) {
+      const err = Object.assign(new Error('pg'), { code });
+      expect(toApiError(err).getStatus(), code).toBe(400);
+    }
+    expect(toApiError(Object.assign(new Error('pg'), { code: '23505' })).getStatus()).toBe(500);
+  });
+
   it('raw non-JSON bodies and content types', async () => {
     for (const raw of ['{', '[1,2', 'null', '\u0000', '{"a":1}}', '<xml/>']) {
       for (const type of ['application/json', 'text/plain', 'application/x-www-form-urlencoded']) {

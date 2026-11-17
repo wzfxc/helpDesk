@@ -10,6 +10,8 @@ export const LIMITS = {
   pageSizeDefault: 50,
   pageSizeMax: 100,
   searchQueryMax: 200,
+  cursorMax: 1_000,
+  savedViewQueryMax: 2_000,
   ratingCommentMax: 2_000,
   cannedTitleMax: 120,
   cannedBodyMax: 10_000,
