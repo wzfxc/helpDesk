@@ -45,17 +45,16 @@ function Bell({ user }: { user: Me }) {
         type="button"
         aria-expanded={open}
         aria-controls="notifications-panel"
-        aria-label={t('title')}
         onClick={() => {
           setOpen((v) => !v);
         }}
         className="relative rounded-md px-2 py-1.5 hover:bg-slate-200 dark:hover:bg-slate-800"
       >
         <span aria-hidden="true">🔔</span>
+        <span className="sr-only">{t('title')}</span>
         {unread > 0 ? (
           <span
             data-testid="notifications-count"
-            aria-label={t('unread', { count: unread })}
             className="ml-1 rounded-full bg-red-700 px-1.5 text-xs font-bold text-white"
           >
             {unread}
