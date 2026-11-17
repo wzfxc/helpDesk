@@ -4,8 +4,18 @@ export abstract class Clock {
 }
 
 export class SystemClock extends Clock {
+  private offsetMs = 0;
+
   now(): Date {
-    return new Date();
+    return new Date(Date.now() + this.offsetMs);
+  }
+
+  advance(ms: number): void {
+    this.offsetMs += ms;
+  }
+
+  reset(): void {
+    this.offsetMs = 0;
   }
 }
 

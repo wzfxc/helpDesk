@@ -84,6 +84,7 @@ jobs:
       - name: Start stack with Docker Compose
         run: |
           cp .env.example .env
+          echo "ENABLE_TEST_HOOKS=true" >> .env
           docker compose up -d --build --wait
       - name: Run Playwright e2e suite
         run: pnpm test:e2e
