@@ -6,6 +6,8 @@ import type {
   RatingInput,
   Ticket,
   TicketDetail,
+  TicketListQuery,
+  TicketListResponse,
   UpdateTicket,
 } from '@helpdesk/shared';
 import type { AuthUser } from '../auth/auth.types.js';
@@ -19,6 +21,7 @@ import { ticketScope } from './ticket-access.js';
 import { bindAttachments, selectEvents, selectMessages } from './ticket-detail.js';
 import { TicketMutations, VersionConflictError } from './ticket-mutations.js';
 import { selectTicketById } from './ticket-query.js';
+import { listTickets } from './ticket-list.js';
 
 @Injectable()
 export class TicketsService {
@@ -114,6 +117,10 @@ export class TicketsService {
       messageId: message.id,
       signals: [{ type: 'ticket.created', ticketId: ticket.id }],
     };
+  }
+
+  list(user: AuthUser, query: TicketListQuery): Promise<TicketListResponse> {
+    return listTickets(this.db, user, query, this.clock.now());
   }
 
   async detail(user: AuthUser, id: string): Promise<TicketDetail> {

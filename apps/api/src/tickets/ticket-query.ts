@@ -36,7 +36,7 @@ interface TicketDtoRow {
   created_at: Date;
   updated_at: Date;
   unread: boolean | null;
-  sort_value?: Date;
+  sort_value?: string;
 }
 
 const iso = (d: Date | null): string | null => (d ? new Date(d).toISOString() : null);
@@ -93,11 +93,7 @@ export interface SelectTicketsOptions {
  * The single query that produces Ticket DTOs. Permission scope is always part of the WHERE
  * clause unless explicitly disabled by internal code paths.
  */
-export async function selectTickets(
-  db: DbOrTx,
-  viewer: AuthUser,
-  opts: SelectTicketsOptions = {},
-): Promise<{ ticket: Ticket; sortValue: Date | undefined }[]> {
+export function ticketsQuery(viewer: AuthUser, opts: SelectTicketsOptions = {}): SQL {
   const conditions: SQL[] = [];
   if (!opts.unscoped) conditions.push(ticketScope(viewer));
   if (opts.where) conditions.push(opts.where);
@@ -105,7 +101,7 @@ export async function selectTickets(
   const unreadSource =
     viewer.role === 'customer' ? sql`t.last_staff_reply_at` : sql`t.last_customer_message_at`;
 
-  const query = sql`
+  return sql`
     select t.id, t.number, t.subject, t.category, t.priority, t.status, t.tags, t.version,
       t.customer_id, c.name as customer_name, c.email as customer_email,
       t.assignee_id, a.name as assignee_name,
@@ -114,7 +110,7 @@ export async function selectTickets(
       t.closed_at, t.next_due_at, t.sla_paused_at, t.sla_breached_first, t.sla_breached_resolution,
       t.last_message_at, t.rating_score, t.rating_comment, t.rated_at, t.created_at, t.updated_at,
       (${unreadSource} > coalesce(r.last_read_at, '-infinity'::timestamptz)) as unread
-      ${opts.sortValue ? sql`, ${opts.sortValue} as sort_value` : sql``}
+      ${opts.sortValue ? sql`, (${opts.sortValue})::text as sort_value` : sql``}
     from tickets t
     join users c on c.id = t.customer_id
     left join users a on a.id = t.assignee_id
@@ -124,10 +120,17 @@ export async function selectTickets(
     ${opts.orderBy ? sql`order by ${opts.orderBy}` : sql``}
     ${opts.limit !== undefined ? sql`limit ${opts.limit}` : sql``}
   `;
-  const res = await db.execute<TicketDtoRow & Record<string, unknown>>(query);
+}
+
+export async function selectTickets(
+  db: DbOrTx,
+  viewer: AuthUser,
+  opts: SelectTicketsOptions = {},
+): Promise<{ ticket: Ticket; sortValue: string | undefined }[]> {
+  const res = await db.execute<TicketDtoRow & Record<string, unknown>>(ticketsQuery(viewer, opts));
   return res.rows.map((r) => ({
     ticket: toTicketDto(r),
-    sortValue: r.sort_value ? new Date(r.sort_value) : undefined,
+    sortValue: r.sort_value ?? undefined,
   }));
 }
 

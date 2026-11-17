@@ -53,3 +53,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
+      - name: Benchmark list queries on 20k seeded tickets (< 200 ms)
+        env:
+          PGPASSWORD: helpdesk
+          DATABASE_URL: postgres://helpdesk:helpdesk@localhost:5433/helpdesk_bench
+        run: |
+          psql -h localhost -p 5433 -U helpdesk -d helpdesk_test -c 'create database helpdesk_bench'
+          pnpm --filter @helpdesk/api bench

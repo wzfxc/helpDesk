@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
   CreateMessageResponseSchema,
@@ -7,6 +7,10 @@ import {
   type CreateMessage,
   type CreateMessageResponse,
   IdSchema,
+  TicketListQuerySchema,
+  TicketListResponseSchema,
+  type TicketListQuery,
+  type TicketListResponse,
   RatingInputSchema,
   TicketDetailSchema,
   TicketSchema,
@@ -20,7 +24,7 @@ import {
 } from '@helpdesk/shared';
 import type { AuthUser } from '../auth/auth.types.js';
 import { CurrentUser, Roles } from '../auth/decorators.js';
-import { ApiZodBody, ApiZodResponse } from '../common/openapi.js';
+import { ApiZodBody, ApiZodQuery, ApiZodResponse } from '../common/openapi.js';
 import { zod } from '../common/zod.pipe.js';
 import { MessagesService } from './messages.service.js';
 import { TicketsService } from './tickets.service.js';
@@ -42,6 +46,16 @@ export class TicketsController {
     @Body(zod(CreateTicketSchema)) body: CreateTicket,
   ): Promise<Ticket> {
     return this.tickets.create(user, body);
+  }
+
+  @Get()
+  @ApiZodQuery(TicketListQuerySchema)
+  @ApiZodResponse(200, TicketListResponseSchema)
+  list(
+    @CurrentUser() user: AuthUser,
+    @Query(zod(TicketListQuerySchema)) query: TicketListQuery,
+  ): Promise<TicketListResponse> {
+    return this.tickets.list(user, query);
   }
 
   @Get(':id')

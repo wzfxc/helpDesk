@@ -192,6 +192,7 @@ export const TicketListQuerySchema = TicketFiltersSchema.extend({
   limit: z.coerce.number().int().min(1).max(LIMITS.pageSizeMax).default(LIMITS.pageSizeDefault),
 });
 export type TicketListQuery = z.infer<typeof TicketListQuerySchema>;
+export type TicketListQueryInput = z.input<typeof TicketListQuerySchema>;
 
 export const TicketListResponseSchema = z.object({
   items: z.array(TicketSchema),
