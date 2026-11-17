@@ -230,6 +230,10 @@ export class TicketsService {
       });
   }
 
+  async canAccess(user: AuthUser, id: string): Promise<boolean> {
+    return (await selectTicketById(this.db, user, id)) !== null;
+  }
+
   async exists(id: string): Promise<boolean> {
     const [row] = await this.db.select({ id: tickets.id }).from(tickets).where(eq(tickets.id, id));
     return !!row;
