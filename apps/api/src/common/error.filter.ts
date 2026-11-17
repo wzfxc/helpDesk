@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import type { ErrorCode } from '@helpdesk/shared';
+import { LIMITS, type ErrorCode } from '@helpdesk/shared';
 import { ApiError } from './errors.js';
 
 const STATUS_CODES: Record<number, ErrorCode> = {
@@ -36,6 +36,14 @@ export function toApiError(exception: unknown): ApiError {
   if (exception instanceof ApiError) return exception;
   if (exception instanceof HttpException) {
     const status = exception.getStatus();
+    if (status === 413) {
+      // only multer's LIMIT_FILE_SIZE (the attachment upload) is raised as an HttpException
+      return new ApiError(
+        413,
+        'payload_too_large',
+        `File is larger than ${LIMITS.attachmentMaxMb.toString()} MB`,
+      );
+    }
     if (status < 500) {
       return new ApiError(status, STATUS_CODES[status] ?? 'bad_request', exception.message);
     }

@@ -41,7 +41,7 @@ export type CreateTicket = z.output<typeof CreateTicketSchema>;
 /** PATCH /tickets/:id — staff only, optimistic locking via `version`. */
 export const UpdateTicketSchema = z
   .object({
-    version: z.number().int().nonnegative(),
+    version: z.number().int().nonnegative().max(LIMITS.versionMax),
     status: StatusSchema.optional(),
     priority: PrioritySchema.optional(),
     category: CategorySchema.optional(),

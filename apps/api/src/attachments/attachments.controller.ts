@@ -33,7 +33,17 @@ export class AttachmentsController {
   @ApiZodResponse(201, AttachmentSchema)
   @UseInterceptors(
     FileInterceptor('file', {
-      limits: { fileSize: LIMITS.attachmentMaxBytes, files: 1, fields: 5 },
+      // Memory storage is bounded by fileSize: busboy stops at the limit, multer aborts with
+      // LIMIT_FILE_SIZE (-> 413) and nothing is ever written to disk for an oversized file.
+      limits: {
+        fileSize: LIMITS.attachmentMaxBytes,
+        files: 1,
+        fields: LIMITS.multipartMaxFields,
+        parts: LIMITS.multipartMaxParts,
+        fieldSize: LIMITS.multipartFieldBytes,
+        fieldNameSize: LIMITS.multipartFieldNameBytes,
+        headerPairs: LIMITS.multipartMaxHeaderPairs,
+      },
     }),
   )
   upload(

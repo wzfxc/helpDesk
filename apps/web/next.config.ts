@@ -17,6 +17,8 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // The rewrite proxy buffers at most this much of a request body; the default (10 MB) would
   // truncate valid 10 MB attachment uploads and break multipart parsing in the api.
+  // src/middleware.ts answers 413 for anything larger than the real limits (by Content-Length)
+  // before it gets here, so this value is only a safety net, not the effective limit.
   experimental: { middlewareClientMaxBodySize: '25mb' },
   // Linting runs as its own step (pnpm lint / CI), not inside next build.
   eslint: { ignoreDuringBuilds: true },

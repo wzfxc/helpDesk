@@ -52,9 +52,14 @@ export class AttachmentsService implements OnModuleInit {
   async upload(user: AuthUser, file: UploadedFile | undefined): Promise<Attachment> {
     if (!file) throw badRequest('Multipart field "file" is required');
     if (file.size > LIMITS.attachmentMaxBytes) {
-      throw new ApiError(413, 'payload_too_large', 'File is larger than 10 MB');
+      throw new ApiError(
+        413,
+        'payload_too_large',
+        `File is larger than ${LIMITS.attachmentMaxMb.toString()} MB`,
+      );
     }
     if (file.size === 0) throw badRequest('File is empty');
+    await this.assertQuota(user.id, file.size);
     const mimeType = detectMimeType(file.buffer);
     if (!mimeType) {
       throw new ApiError(
@@ -82,6 +87,26 @@ export class AttachmentsService implements OnModuleInit {
     } catch (err) {
       await rm(this.filePath(storageKey), { force: true });
       throw err;
+    }
+  }
+
+  /** Uploaded-but-unattached files per user are capped so one client cannot fill the disk. */
+  private async assertQuota(userId: string, incomingBytes: number): Promise<void> {
+    const res = await this.db.execute<{ n: string; bytes: string }>(sql`
+      select count(*)::text as n, coalesce(sum(size), 0)::text as bytes
+      from attachments where uploader_id = ${userId} and message_id is null`);
+    const row = res.rows[0];
+    const n = Number(row?.n ?? 0);
+    const bytes = Number(row?.bytes ?? 0);
+    if (
+      n >= LIMITS.unboundAttachmentsMax ||
+      bytes + incomingBytes > LIMITS.unboundAttachmentsMaxBytes
+    ) {
+      throw new ApiError(
+        422,
+        'attachment_quota_exceeded',
+        `Too many unattached uploads (max ${LIMITS.unboundAttachmentsMax.toString()} files / ${(LIMITS.unboundAttachmentsMaxBytes / 1024 / 1024).toString()} MB); attach or remove them first`,
+      );
     }
   }
 

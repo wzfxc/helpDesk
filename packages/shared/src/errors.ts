@@ -17,6 +17,7 @@ export const ERROR_CODES = [
   'unsupported_media_type',
   'too_many_attachments',
   'attachment_unavailable',
+  'attachment_quota_exceeded',
   'no_tickets_available',
   'rate_limited',
   'internal_error',

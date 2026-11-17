@@ -2,9 +2,9 @@ import type { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import express, { type NextFunction, type Request, type Response } from 'express';
+import { LIMITS } from '@helpdesk/shared';
 import { sendApiError, toApiError } from './common/error.filter.js';
 
-const JSON_LIMIT = '1mb';
 export const DEFAULT_TRUST_PROXY = 'loopback, linklocal, uniquelocal';
 
 /** Shared between main.ts and integration tests so both run the exact same pipeline. */
@@ -15,7 +15,10 @@ export function configureApp(app: INestApplication, trustProxy = DEFAULT_TRUST_P
   http.set('trust proxy', trustProxy);
   http.disable('x-powered-by');
 
-  const json = express.json({ limit: JSON_LIMIT });
+  // Every JSON / urlencoded endpoint is capped at 256 KB (413 payload_too_large); only the
+  // multipart POST /attachments may carry up to 10 MiB and is not touched by these parsers.
+  const json = express.json({ limit: LIMITS.jsonBodyMaxBytes });
+  const urlencoded = express.urlencoded({ extended: false, limit: LIMITS.jsonBodyMaxBytes });
   // Body parser errors (malformed JSON, too large) never reach Nest filters: convert them here.
   app.use((req: Request, res: Response, next: NextFunction) => {
     json(req, res, (err?: unknown) => {
@@ -23,7 +26,13 @@ export function configureApp(app: INestApplication, trustProxy = DEFAULT_TRUST_P
         sendApiError(res, toApiError(err));
         return;
       }
-      next();
+      urlencoded(req, res, (err2?: unknown) => {
+        if (err2) {
+          sendApiError(res, toApiError(err2));
+          return;
+        }
+        next();
+      });
     });
   });
   app.use(cookieParser());

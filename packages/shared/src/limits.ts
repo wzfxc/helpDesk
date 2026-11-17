@@ -3,9 +3,25 @@ export const LIMITS = {
   messageBodyMax: 20_000,
   tagMax: 40,
   tagsPerTicket: 20,
+  /** "10 MB" in the spec is 10 MiB = 10 * 1024 * 1024 bytes (exactly this size is accepted). */
   attachmentMaxBytes: 10 * 1024 * 1024,
+  /** Same limit in MiB, for user-visible messages ("10 MB"). */
+  attachmentMaxMb: 10,
   attachmentsPerMessage: 5,
   attachmentFilenameMax: 255,
+  /** Uploaded but not yet attached to a message (cleaned up after `orphanAttachmentHours`). */
+  unboundAttachmentsMax: 20,
+  unboundAttachmentsMaxBytes: 100 * 1024 * 1024,
+  /** JSON / urlencoded request body limit for every endpoint except POST /attachments. */
+  jsonBodyMaxBytes: 256 * 1024,
+  /** multipart/form-data guards (busboy): one file part + a few tiny fields, nothing else. */
+  multipartMaxParts: 6,
+  multipartMaxFields: 5,
+  multipartFieldBytes: 1024,
+  multipartFieldNameBytes: 100,
+  multipartMaxHeaderPairs: 50,
+  /** Highest accepted optimistic-locking version. */
+  versionMax: 2_147_483_647,
   bulkMax: 200,
   pageSizeDefault: 50,
   pageSizeMax: 100,

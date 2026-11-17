@@ -18,6 +18,7 @@ export interface UploadItem {
 
 /** Upload state for the composer / new ticket form: progress, cancel, remove. */
 export function useUploads() {
+  const t = useTranslations('composer');
   const [items, setItems] = useState<UploadItem[]>([]);
   const counter = useRef(0);
 
@@ -30,6 +31,20 @@ export function useUploads() {
       for (const file of files) {
         counter.current += 1;
         const localId = `u${counter.current.toString()}`;
+        if (file.size > LIMITS.attachmentMaxBytes) {
+          // same limit as the api (413): do not even start a doomed upload
+          setItems((prev) => [
+            ...prev,
+            {
+              localId,
+              name: file.name,
+              progress: 0,
+              status: 'error',
+              error: t('fileTooLarge', { mb: LIMITS.attachmentMaxMb }),
+            },
+          ]);
+          continue;
+        }
         const handle = uploadAttachment(file, (progress) => {
           patch(localId, { progress });
         });
@@ -53,7 +68,7 @@ export function useUploads() {
           });
       }
     },
-    [patch],
+    [patch, t],
   );
 
   const remove = useCallback((localId: string) => {
@@ -138,7 +153,10 @@ export function AttachmentUploader({
           }}
         />
         <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-          {t('attachmentsLimit', { max: LIMITS.attachmentsPerMessage })}
+          {t('attachmentsLimit', {
+            max: LIMITS.attachmentsPerMessage,
+            mb: LIMITS.attachmentMaxMb,
+          })}
         </p>
       </div>
       {uploads.items.length > 0 ? (
