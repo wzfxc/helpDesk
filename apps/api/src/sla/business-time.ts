@@ -36,45 +36,33 @@ interface Window {
   end: number;
 }
 
-function localDayWindow(
-  y: number,
-  m: number,
-  d: number,
-  cal: BusinessCalendar,
-): { window: Window | null; next: [number, number, number] } {
-  const noon = new TZDate(y, m, d, 12, 0, 0, cal.timeZone);
-  const next: [number, number, number] = [y, m, d + 1];
-  if (!cal.workDays.includes(noon.getDay())) return { window: null, next };
-  const start = new TZDate(
-    y,
-    m,
-    d,
-    Math.floor(cal.startMinute / 60),
-    cal.startMinute % 60,
-    0,
-    cal.timeZone,
-  );
-  const end = new TZDate(
-    y,
-    m,
-    d,
-    Math.floor(cal.endMinute / 60),
-    cal.endMinute % 60,
-    0,
-    cal.timeZone,
-  );
-  return { window: { start: start.getTime(), end: end.getTime() }, next };
+const windowCache = new Map<string, Window | null>();
+
+/** Business window of one local calendar day (cached: TZDate construction is relatively slow). */
+function localDayWindow(y: number, m: number, d: number, cal: BusinessCalendar): Window | null {
+  const key = `${cal.timeZone}|${cal.startMinute}|${cal.endMinute}|${cal.workDays.join('')}|${y}-${m}-${d}`;
+  const cached = windowCache.get(key);
+  if (cached !== undefined) return cached;
+  // The weekday of a calendar date does not depend on the time zone.
+  const weekday = new Date(Date.UTC(y, m, d)).getUTCDay();
+  let window: Window | null = null;
+  if (cal.workDays.includes(weekday)) {
+    const at = (minute: number) =>
+      new TZDate(y, m, d, Math.floor(minute / 60), minute % 60, 0, cal.timeZone).getTime();
+    window = { start: at(cal.startMinute), end: at(cal.endMinute) };
+  }
+  if (windowCache.size > 50_000) windowCache.clear();
+  windowCache.set(key, window);
+  return window;
 }
 
 /** Business windows (in epoch ms) starting from the local day containing `from`. */
 function* businessWindows(from: number, cal: BusinessCalendar): Generator<Window> {
   const local = new TZDate(from, cal.timeZone);
-  let ymd: [number, number, number] = [local.getFullYear(), local.getMonth(), local.getDate()];
+  const day = new Date(Date.UTC(local.getFullYear(), local.getMonth(), local.getDate()));
   for (let i = 0; i < MAX_DAYS; i++) {
-    const { window, next } = localDayWindow(ymd[0], ymd[1], ymd[2], cal);
-    // Normalise overflowing day numbers (e.g. 32 Jan -> 1 Feb) via the tz-aware constructor.
-    const n = new TZDate(next[0], next[1], next[2], 12, 0, 0, cal.timeZone);
-    ymd = [n.getFullYear(), n.getMonth(), n.getDate()];
+    const window = localDayWindow(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), cal);
+    day.setUTCDate(day.getUTCDate() + 1);
     if (window && window.end > from) yield { start: Math.max(window.start, from), end: window.end };
   }
   throw new Error('business calendar has no working time');
