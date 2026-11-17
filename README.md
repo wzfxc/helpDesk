@@ -309,4 +309,4 @@ _(Поведінка зафіксована юніт-тестами в `apps/api
 - **Пошук без морфології:** FTS зі словником `simple` шукає точні та префіксні збіги слів (без лематизації української/англійської).
 - **Приймання #11 (автозакриття через 3 дні та відповідь у закриту заявку):** покрито інтеграційними тестами API (`apps/api/test/jobs.test.ts`, `messages.test.ts`) з підміною `Clock`, але не Playwright e2e.
 - **Graceful `SIGTERM` на Windows:** тест `apps/api/test/shutdown.test.ts` пропускається на `win32` (де `SIGTERM` жорстко вбиває процес); виконується в Linux CI і перевірявся в Docker (`docker compose stop api` → код `0`).
-- **Поточні прогалини UI / тестів (в роботі):** сторінки `/lead` і `/lead/settings`, юніт-тести `apps/web` (Vitest + Testing Library + MSW), axe e2e-перевірки.
+- **Поточні прогалини тестів / полірування:** юніт-тести `apps/web` (Vitest + Testing Library + MSW — `vitest.config.ts` має `passWithNoTests: true`), окремий e2e-тест форматування відносного часу та відмінювань для `uk`/`en`, управління фокусом після надсилання відповіді.
