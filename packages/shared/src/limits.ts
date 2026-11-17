@@ -20,6 +20,16 @@ export const LIMITS = {
   multipartFieldBytes: 1024,
   multipartFieldNameBytes: 100,
   multipartMaxHeaderPairs: 50,
+  /** Per-user throttles (429 rate_limited + Retry-After), sliding window. */
+  rate: {
+    ticketCreate: { max: 60, windowMs: 10 * 60_000 },
+    message: { max: 60, windowMs: 60_000 },
+    upload: { max: 60, windowMs: 10 * 60_000 },
+    /** per user and ticket; the web client already sends at most one every 2.5 s */
+    typing: { max: 1, windowMs: 1_000 },
+  },
+  /** Max simultaneous SSE connections per user (extra tabs beyond this get 429). */
+  sseMaxPerUser: 8,
   /** Highest accepted optimistic-locking version. */
   versionMax: 2_147_483_647,
   bulkMax: 200,

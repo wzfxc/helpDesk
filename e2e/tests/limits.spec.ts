@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test';
-import { CUSTOMER, Session, test } from './fixtures';
+import { BASE_URL, CUSTOMER, LEAD, Session, test, uniqueToken } from './fixtures';
 
 /**
  * Limits through the real Next.js proxy (web:3000 -> api:4000). The reviewer's concern: the
@@ -48,4 +48,25 @@ test('JSON bodies above 256 KB are 413 through the proxy', async ({ browser }) =
   });
   expect(res.status()).toBe(413);
   expect(((await res.json()) as { error: { code: string } }).error.code).toBe('payload_too_large');
+});
+
+test('10 failed logins of one account do not block other users behind the proxy', async ({
+  browser,
+}) => {
+  // unique address per run: the blocked pair stays blocked for 15 minutes, reruns must not collide
+  const victim = { email: `${uniqueToken('LOCK').toLowerCase()}@example.com` };
+  const ctx = await browser.newContext({ baseURL: BASE_URL });
+  for (let i = 0; i < 10; i++) {
+    const res = await ctx.request.post('/api/auth/login', {
+      data: { email: victim.email, password: 'wrong-password' },
+    });
+    expect(res.status()).toBe(i < 5 ? 401 : 429);
+    if (i >= 5) expect(res.headers()['retry-after']).toBeDefined();
+  }
+  await ctx.close();
+  // the web container is the api's only peer, yet an unrelated account signs in fine
+  const lead = await Session.open(browser, LEAD);
+  expect((await lead.api.get('/api/me')).status()).toBe(200);
+  const other = await Session.open(browser, CUSTOMER(15));
+  expect((await other.api.get('/api/me')).status()).toBe(200);
 });

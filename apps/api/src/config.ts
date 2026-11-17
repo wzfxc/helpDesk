@@ -18,6 +18,12 @@ const EnvSchema = z.object({
   SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
   LOGIN_MAX_FAILURES: z.coerce.number().int().positive().default(5),
   LOGIN_WINDOW_MINUTES: z.coerce.number().int().positive().default(15),
+  /** Failures per account from ALL addresses (distributed guessing). Default 10x LOGIN_MAX_FAILURES. */
+  LOGIN_EMAIL_MAX_FAILURES: z.coerce.number().int().positive().optional(),
+  /** Failures per address across ALL accounts (flood guard). Default 40x LOGIN_MAX_FAILURES. */
+  LOGIN_IP_MAX_FAILURES: z.coerce.number().int().positive().optional(),
+  /** Per-user throttles on typing / ticket creation / messages / uploads (429 + Retry-After). */
+  RATE_LIMITS_ENABLED: bool.default(true),
   SEED_ON_START: bool.default(false),
   SEED_TICKETS: z.coerce.number().int().nonnegative().default(20_000),
   SEED_CUSTOMER_PASSWORD: z.string().min(1).default('customer123'),

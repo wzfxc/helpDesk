@@ -25,10 +25,12 @@ import {
   type Ticket,
   type TicketDetail,
   type UpdateTicket,
+  LIMITS,
 } from '@helpdesk/shared';
 import type { AuthUser } from '../auth/auth.types.js';
 import { CurrentUser, Roles } from '../auth/decorators.js';
 import { ApiZodBody, ApiZodQuery, ApiZodResponse } from '../common/openapi.js';
+import { RateLimiter } from '../common/rate-limiter.js';
 import { zod } from '../common/zod.pipe.js';
 import { MessagesService } from './messages.service.js';
 import { QueueService } from './queue.service.js';
@@ -41,6 +43,7 @@ export class TicketsController {
     private readonly tickets: TicketsService,
     private readonly messages: MessagesService,
     private readonly queue: QueueService,
+    private readonly limiter: RateLimiter,
   ) {}
 
   /** Assigns the most urgent free ticket of the caller's categories (404 no_tickets_available). */
@@ -73,6 +76,7 @@ export class TicketsController {
     @CurrentUser() user: AuthUser,
     @Body(zod(CreateTicketSchema)) body: CreateTicket,
   ): Promise<Ticket> {
+    this.limiter.check('ticket-create', user.id, LIMITS.rate.ticketCreate);
     return this.tickets.create(user, body);
   }
 
@@ -117,6 +121,7 @@ export class TicketsController {
     @Param('id', zod(IdSchema)) id: string,
     @Body(zod(CreateMessageSchema)) body: CreateMessage,
   ): Promise<CreateMessageResponse> {
+    this.limiter.check('message', user.id, LIMITS.rate.message);
     return this.messages.create(user, id, body);
   }
 

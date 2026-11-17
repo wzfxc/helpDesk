@@ -9,9 +9,6 @@ import { DB, type Db, type DbOrTx } from '../db/db.js';
 import { loginAttempts, sessions, users } from '../db/schema.js';
 import type { AuthUser } from './auth.types.js';
 
-/** Failures per IP are allowed to be higher than per account (shared NAT, offices). */
-const IP_FAILURE_MULTIPLIER = 4;
-
 export const hashToken = (token: string): string =>
   createHash('sha256').update(token).digest('hex');
 
@@ -26,14 +23,21 @@ export class AuthService {
     private readonly clock: Clock,
   ) {}
 
-  /** Throws 429 if this email or IP has too many recent failures. */
+  /**
+   * Throws 429 when the (email, ip) pair has too many recent failures. Counting per pair keeps
+   * one user's typos (or an attacker guessing one account) from locking other users out, even
+   * when everybody shares an address (all browsers reach the api through the web proxy).
+   * Two coarse backstops remain: per account from any address and per address across accounts.
+   */
   async assertNotLimited(db: DbOrTx, email: string, ip: string): Promise<void> {
     const now = this.clock.now();
     const windowStart = new Date(now.getTime() - this.config.LOGIN_WINDOW_MINUTES * 60_000);
-    const rows = await db
+    const [r] = await db
       .select({
+        byPair: sql<number>`count(*) filter (where ${loginAttempts.email} = ${email} and ${loginAttempts.ip} = ${ip})::int`,
         byEmail: sql<number>`count(*) filter (where ${loginAttempts.email} = ${email})::int`,
         byIp: sql<number>`count(*) filter (where ${loginAttempts.ip} = ${ip})::int`,
+        oldestPair: sql<Date | null>`min(${loginAttempts.attemptedAt}) filter (where ${loginAttempts.email} = ${email} and ${loginAttempts.ip} = ${ip})`,
         oldestEmail: sql<Date | null>`min(${loginAttempts.attemptedAt}) filter (where ${loginAttempts.email} = ${email})`,
         oldestIp: sql<Date | null>`min(${loginAttempts.attemptedAt}) filter (where ${loginAttempts.ip} = ${ip})`,
       })
@@ -44,12 +48,14 @@ export class AuthService {
           or(eq(loginAttempts.email, email), eq(loginAttempts.ip, ip)),
         ),
       );
-    const r = rows[0];
     if (!r) return;
     const max = this.config.LOGIN_MAX_FAILURES;
-    let oldest: Date | null = null;
-    if (r.byEmail >= max) oldest = r.oldestEmail;
-    else if (r.byIp >= max * IP_FAILURE_MULTIPLIER) oldest = r.oldestIp;
+    const emailMax = this.config.LOGIN_EMAIL_MAX_FAILURES ?? max * 10;
+    const ipMax = this.config.LOGIN_IP_MAX_FAILURES ?? max * 40;
+    let oldest: Date | null;
+    if (r.byPair >= max) oldest = r.oldestPair;
+    else if (r.byEmail >= emailMax) oldest = r.oldestEmail;
+    else if (r.byIp >= ipMax) oldest = r.oldestIp;
     else return;
     const oldestMs = oldest ? new Date(oldest).getTime() : now.getTime();
     const retryAfter = Math.max(
@@ -65,7 +71,6 @@ export class AuthService {
       { 'Retry-After': String(retryAfter) },
     );
   }
-
   async login(
     email: string,
     password: string,
@@ -91,13 +96,15 @@ export class AuthService {
     if (!row || !ok) {
       throw new ApiError(401, 'invalid_credentials', 'Invalid email or password');
     }
-    await this.db
-      .delete(loginAttempts)
-      .where(
-        attemptId === undefined
-          ? eq(loginAttempts.email, email)
-          : or(eq(loginAttempts.email, email), eq(loginAttempts.id, attemptId)),
-      );
+    await this.db.delete(loginAttempts).where(
+      // only this (email, ip) pair is forgiven; other addresses' counters stay untouched
+      attemptId === undefined
+        ? and(eq(loginAttempts.email, email), eq(loginAttempts.ip, ip))
+        : or(
+            and(eq(loginAttempts.email, email), eq(loginAttempts.ip, ip)),
+            eq(loginAttempts.id, attemptId),
+          ),
+    );
 
     const token = randomBytes(32).toString('base64url');
     const expiresAt = new Date(

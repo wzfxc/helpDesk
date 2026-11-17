@@ -15,6 +15,7 @@ import { AttachmentSchema, IdSchema, LIMITS, type Attachment } from '@helpdesk/s
 import type { AuthUser } from '../auth/auth.types.js';
 import { CurrentUser } from '../auth/decorators.js';
 import { ApiZodResponse } from '../common/openapi.js';
+import { RateLimiter } from '../common/rate-limiter.js';
 import { zod } from '../common/zod.pipe.js';
 import { AttachmentsService, type UploadedFile as File } from './attachments.service.js';
 import { contentDisposition } from './detect-type.js';
@@ -22,9 +23,12 @@ import { contentDisposition } from './detect-type.js';
 @ApiTags('attachments')
 @Controller('attachments')
 export class AttachmentsController {
-  constructor(private readonly attachments: AttachmentsService) {}
+  constructor(
+    private readonly attachments: AttachmentsService,
+    private readonly limiter: RateLimiter,
+  ) {}
 
-  /** multipart/form-data, field `file`, ≤ 10 MB (413), type sniffed from content (415). */
+  /** multipart/form-data, field `file`, ≤ 10 MiB (413), type sniffed from content (415). */
   @Post()
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -50,6 +54,7 @@ export class AttachmentsController {
     @CurrentUser() user: AuthUser,
     @UploadedFile() file: File | undefined,
   ): Promise<Attachment> {
+    this.limiter.check('upload', user.id, LIMITS.rate.upload);
     return this.attachments.upload(user, file);
   }
 

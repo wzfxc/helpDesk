@@ -33,6 +33,8 @@ export async function createTestApp(
         DATABASE_URL: TEST_DATABASE_URL,
         DATABASE_POOL_MAX: 40,
         WORKER_ENABLED: false,
+        // throttles are opt-in in tests (a fake clock plus hundreds of requests per user)
+        RATE_LIMITS_ENABLED: false,
         ATTACHMENTS_DIR: './data/test-attachments',
         ...overrides,
       }),
@@ -42,7 +44,7 @@ export async function createTestApp(
     .useValue(clock)
     .compile();
   const app = moduleRef.createNestApplication({ bodyParser: false, logger: ['error', 'warn'] });
-  configureApp(app);
+  configureApp(app, overrides.TRUST_PROXY);
   await app.init();
   const http = request(app.getHttpServer());
   return {
