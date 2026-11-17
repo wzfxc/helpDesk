@@ -1,0 +1,16 @@
+**/node_modules
+**/dist
+**/.next
+**/coverage
+**/data
+.git
+.github
+.env
+.env.*
+!.env.example
+e2e/*
+!e2e/package.json
+playwright-report
+test-results
+*.md
+!apps/web/messages/*.json
