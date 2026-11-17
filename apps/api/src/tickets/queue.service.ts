@@ -1,12 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { eq, sql } from 'drizzle-orm';
-import type {
-  BulkAction,
-  BulkRequest,
-  BulkResponse,
-  BulkResult,
-  BulkSkipReason,
-  Ticket,
+import {
+  LIMITS,
+  type BulkAction,
+  type BulkRequest,
+  type BulkResponse,
+  type BulkResult,
+  type BulkSkipReason,
+  type Ticket,
 } from '@helpdesk/shared';
 import type { AuthUser } from '../auth/auth.types.js';
 import { Clock } from '../common/clock.js';
@@ -128,6 +129,8 @@ export class QueueService {
       case 'tags': {
         const remove = new Set(action.remove);
         const next = [...new Set([...row.tags, ...action.add])].filter((t) => !remove.has(t));
+        // Merging must respect the same cap as PATCH (Zod only bounds the request itself).
+        if (next.length > LIMITS.tagsPerTicket) throw new Skip('invalid_tags');
         return { tags: next };
       }
     }

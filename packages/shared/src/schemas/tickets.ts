@@ -232,6 +232,7 @@ export const BULK_SKIP_REASONS = [
   'invalid_transition',
   'invalid_assignee',
   'ticket_closed',
+  'invalid_tags',
 ] as const;
 export const BulkSkipReasonSchema = z.enum(BULK_SKIP_REASONS);
 export type BulkSkipReason = z.infer<typeof BulkSkipReasonSchema>;

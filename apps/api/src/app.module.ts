@@ -11,6 +11,7 @@ import { CoreModule } from './core.module.js';
 import { TicketsModule } from './tickets/tickets.module.js';
 import { AttachmentsModule } from './attachments/attachments.module.js';
 import { JobsModule } from './jobs/jobs.module.js';
+import { MiscModule } from './misc/misc.module.js';
 
 @Module({})
 export class AppModule {
@@ -26,6 +27,7 @@ export class AppModule {
         TicketsModule,
         AttachmentsModule,
         JobsModule,
+        MiscModule,
       ],
       controllers: [HealthController],
       providers: [{ provide: APP_FILTER, useClass: ApiErrorFilter }],

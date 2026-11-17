@@ -141,6 +141,16 @@ describe('bulk', () => {
     expect(detail.body.ticket.tags).toEqual(['b', 'c']);
   });
 
+  it('skips tickets whose merged tags would exceed the cap', async () => {
+    const t = await createTicket(w.as.customer);
+    const full = Array.from({ length: 20 }, (_, i) => `tag${i}`);
+    await w.as.lead.patch(`/tickets/${t.id}`).send({ version: 0, tags: full });
+    const res = await w.as.lead
+      .post('/tickets/bulk')
+      .send({ ids: [t.id], action: { type: 'tags', add: ['extra'] } });
+    expect(res.body.results).toEqual([{ id: t.id, ok: false, reason: 'invalid_tags' }]);
+  });
+
   it('validates the request', async () => {
     const tooMany = Array.from({ length: 201 }, () => randomUUID());
     expect(
