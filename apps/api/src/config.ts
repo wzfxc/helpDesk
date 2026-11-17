@@ -6,7 +6,11 @@ const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   API_PORT: z.coerce.number().int().positive().default(4000),
   DATABASE_URL: z.string().default('postgres://helpdesk:helpdesk@localhost:5432/helpdesk'),
+  /** Keep DATABASE_POOL_MAX + 3 (LISTEN client, migrations) below postgres max_connections (100). */
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(20),
+  DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().nonnegative().default(10_000),
+  DB_IDLE_TX_TIMEOUT_MS: z.coerce.number().int().nonnegative().default(15_000),
+  DB_CONNECT_TIMEOUT_MS: z.coerce.number().int().nonnegative().default(10_000),
   COOKIE_SECURE: bool.default(false),
   /** express 'trust proxy' value: which hops may set X-Forwarded-For. */
   TRUST_PROXY: z.string().default('loopback, linklocal, uniquelocal'),
@@ -18,7 +22,7 @@ const EnvSchema = z.object({
   SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
   LOGIN_MAX_FAILURES: z.coerce.number().int().positive().default(5),
   LOGIN_WINDOW_MINUTES: z.coerce.number().int().positive().default(15),
-  /** Failures per account from ALL addresses (distributed guessing). Default 10x LOGIN_MAX_FAILURES. */
+  /** Failures per account from ALL addresses (distributed guessing). Default 4x LOGIN_MAX_FAILURES (trade-off: bounds distributed guessing, but an attacker can lock an account out for the window). */
   LOGIN_EMAIL_MAX_FAILURES: z.coerce.number().int().positive().optional(),
   /** Failures per address across ALL accounts (flood guard). Default 40x LOGIN_MAX_FAILURES. */
   LOGIN_IP_MAX_FAILURES: z.coerce.number().int().positive().optional(),

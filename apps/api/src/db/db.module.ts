@@ -10,7 +10,11 @@ import { createDb, createPool, DB, PG_POOL } from './db.js';
       provide: PG_POOL,
       inject: [APP_CONFIG],
       useFactory: (config: AppConfig): Pool =>
-        createPool(config.DATABASE_URL, config.DATABASE_POOL_MAX),
+        createPool(config.DATABASE_URL, config.DATABASE_POOL_MAX, {
+          statementTimeoutMs: config.DB_STATEMENT_TIMEOUT_MS,
+          idleInTransactionTimeoutMs: config.DB_IDLE_TX_TIMEOUT_MS,
+          connectionTimeoutMs: config.DB_CONNECT_TIMEOUT_MS,
+        }),
     },
     {
       provide: DB,

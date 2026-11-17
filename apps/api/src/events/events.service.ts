@@ -8,8 +8,10 @@ import {
 import { sql } from 'drizzle-orm';
 import type { Response } from 'express';
 import { Client } from 'pg';
-import { SSE_HEARTBEAT_MS, type ServerEvent } from '@helpdesk/shared';
+import { LIMITS, SSE_HEARTBEAT_MS, type ServerEvent } from '@helpdesk/shared';
 import type { AuthUser } from '../auth/auth.types.js';
+import { sendApiError } from '../common/error.filter.js';
+import { ApiError } from '../common/errors.js';
 import { APP_CONFIG, type AppConfig } from '../config.js';
 import { DB, type Db } from '../db/db.js';
 import { RealtimeService, type RealtimeSignal } from '../realtime/realtime.service.js';
@@ -36,6 +38,8 @@ export class EventsService implements OnApplicationBootstrap, BeforeApplicationS
   private static readonly REPLAY_LIMIT = 500;
   private readonly logger = new Logger('Events');
   private readonly subscribers = new Set<Subscriber>();
+  /** open streams per user id (includes streams still replaying) */
+  private readonly openByUser = new Map<string, number>();
   private readonly recent: { id: number; signal: RealtimeSignal }[] = [];
   private listener: Client | null = null;
   private closing = false;
@@ -97,6 +101,22 @@ export class EventsService implements OnApplicationBootstrap, BeforeApplicationS
 
   /** Opens the SSE stream for a user, replaying missed events when Last-Event-ID is given. */
   subscribe(user: AuthUser, res: Response, lastEventId?: number): void {
+    // Cap simultaneous streams per user: a loop opening tabs must not exhaust sockets/pool.
+    if ((this.openByUser.get(user.id) ?? 0) >= LIMITS.sseMaxPerUser) {
+      sendApiError(
+        res,
+        new ApiError(
+          429,
+          'rate_limited',
+          'Too many open event streams for this account',
+          undefined,
+          { retryAfterSeconds: 10 },
+          { 'Retry-After': '10' },
+        ),
+      );
+      return;
+    }
+    this.openByUser.set(user.id, (this.openByUser.get(user.id) ?? 0) + 1);
     res.status(200).set({
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
@@ -118,6 +138,9 @@ export class EventsService implements OnApplicationBootstrap, BeforeApplicationS
       sub.closed = true;
       clearInterval(sub.heartbeat);
       this.subscribers.delete(sub);
+      const left = (this.openByUser.get(user.id) ?? 1) - 1;
+      if (left <= 0) this.openByUser.delete(user.id);
+      else this.openByUser.set(user.id, left);
     });
     if (lastEventId !== undefined && this.recent.some((entry) => entry.id > lastEventId)) {
       void this.replayAndSubscribe(sub, lastEventId);

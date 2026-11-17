@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { ServerEvent } from '@helpdesk/shared';
+import { LIMITS, type ServerEvent } from '@helpdesk/shared';
 import { createTestApp, PASSWORD, type TestContext, type TestUser } from './app.js';
 import { resetDb } from './db.js';
 import { createTicket, createWorld, type World } from './fixtures.js';
@@ -217,5 +217,30 @@ describe('GET /events', () => {
     reconnectedCustomer.close();
     reconnectedStaff.close();
     invalid.close();
+  });
+});
+
+describe('SSE connection cap', () => {
+  it('allows LIMITS.sseMaxPerUser streams per user, answers 429 beyond and frees slots on close', async () => {
+    const cookie = await cookieFor(w.customer);
+    const open: Stream[] = [];
+    for (let i = 0; i < LIMITS.sseMaxPerUser; i++) open.push(await openStream(cookie));
+    expect(open.every((s) => s.status === 200)).toBe(true);
+
+    const over = await openStream(cookie);
+    expect(over.status).toBe(429);
+    expect(over.raw()).toContain('rate_limited');
+
+    // other users are not affected
+    const other = await openStream(await cookieFor(w.customer2));
+    expect(other.status).toBe(200);
+
+    open[0]!.close();
+    await wait(200);
+    const again = await openStream(cookie);
+    expect(again.status).toBe(200);
+    [...open, other, again].forEach((s) => {
+      s.close();
+    });
   });
 });

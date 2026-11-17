@@ -50,7 +50,7 @@ export class AuthService {
       );
     if (!r) return;
     const max = this.config.LOGIN_MAX_FAILURES;
-    const emailMax = this.config.LOGIN_EMAIL_MAX_FAILURES ?? max * 10;
+    const emailMax = this.config.LOGIN_EMAIL_MAX_FAILURES ?? max * 4;
     const ipMax = this.config.LOGIN_IP_MAX_FAILURES ?? max * 40;
     let oldest: Date | null;
     if (r.byPair >= max) oldest = r.oldestPair;

@@ -20,6 +20,7 @@ export const ERROR_CODES = [
   'attachment_quota_exceeded',
   'no_tickets_available',
   'rate_limited',
+  'service_unavailable',
   'internal_error',
 ] as const;
 export const ErrorCodeSchema = z.enum(ERROR_CODES);

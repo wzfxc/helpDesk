@@ -70,7 +70,7 @@ describe('login limiter', () => {
 
   it('guessing one account from many addresses still hits the per-account backstop', async () => {
     const user = await createUser(ctx.db, 'customer');
-    const max = 5 * 10;
+    const max = 5 * 4; // LOGIN_EMAIL_MAX_FAILURES default = 4x LOGIN_MAX_FAILURES
     for (let i = 0; i < max; i++) {
       await login(ctx, user.email, 'wrong', `198.51.100.${(i + 1).toString()}`);
     }

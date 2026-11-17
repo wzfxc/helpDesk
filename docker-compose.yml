@@ -3,6 +3,10 @@ services:
   postgres:
     image: postgres:16
     restart: unless-stopped
+    # Explicit so the api pool (DATABASE_POOL_MAX=20) + LISTEN client + migration pool always fit.
+    # statement_timeout is enforced per api connection (DB_STATEMENT_TIMEOUT_MS), not globally,
+    # so the seed and migrations are not cut off.
+    command: ['postgres', '-c', 'max_connections=100']
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-helpdesk}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-helpdesk}

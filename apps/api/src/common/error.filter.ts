@@ -54,6 +54,21 @@ export function toApiError(exception: unknown): ApiError {
   if (pgCode?.startsWith('22')) {
     return new ApiError(400, 'validation_error', 'Request contains invalid characters or values');
   }
+  // Server-side guards: statement_timeout (57014) or no free pooled connection in time.
+  if (
+    pgCode === '57014' ||
+    (exception instanceof Error &&
+      /timeout exceeded when trying to connect/.test(exception.message))
+  ) {
+    return new ApiError(
+      503,
+      'service_unavailable',
+      'The service is busy, try again shortly',
+      undefined,
+      undefined,
+      { 'Retry-After': '2' },
+    );
+  }
   // body-parser / busboy style errors carry a client status
   if (typeof exception === 'object' && exception !== null && 'status' in exception) {
     const status = Number(exception.status);
