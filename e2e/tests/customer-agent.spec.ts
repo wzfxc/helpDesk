@@ -102,10 +102,10 @@ test('acceptance #4: internal notes and their attachments are invisible to the c
   const detail = await customer.api.get(`/api/tickets/${ticket.id}`);
   expect(detail.status()).toBe(200);
   expect(await detail.text()).not.toContain(secret);
-  const search = await customer.api.get(
-    `/api/tickets?q=${encodeURIComponent(secret.split('-')[2] ?? '')}`,
-  );
+  const search = await customer.api.get(`/api/tickets?q=${encodeURIComponent(secret)}`);
   expect(JSON.stringify(await search.json())).not.toContain(ticket.id);
+  const agentSearch = await agent.api.get(`/api/tickets?q=${encodeURIComponent(secret)}`);
+  expect(JSON.stringify(await agentSearch.json())).toContain(ticket.id);
   // ... nor through the note's attachment
   expect((await customer.api.get(`/api/attachments/${upload.id}`)).status()).toBe(404);
   expect((await agent.api.get(`/api/attachments/${upload.id}`)).status()).toBe(200);
