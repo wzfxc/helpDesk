@@ -30,6 +30,7 @@
     "zod": "^4.1.0"
   },
   "devDependencies": {
+    "@types/node": "^22.20.5",
     "tsup": "^8.5.0",
     "typescript": "~5.9.3",
     "vitest": "^3.2.4"
