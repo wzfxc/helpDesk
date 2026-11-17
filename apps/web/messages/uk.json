@@ -264,7 +264,16 @@
     "cannedTitle": "Назва",
     "cannedBody": "Текст",
     "cannedHint": "Підстановки: '{{'customerName'}}', '{{'ticketNumber'}}', '{{'agentName'}}'",
+    "cannedCategory": "Категорія",
+    "cannedEdit": "Редагувати",
+    "cannedEmpty": "Шаблонів відповідей ще немає.",
     "add": "Додати шаблон",
-    "empty": "За цей період даних немає"
+    "empty": "За цей період даних немає",
+    "ratingsCount": "{count, plural, one {# оцінка} few {# оцінки} many {# оцінок} other {# оцінки}}",
+    "invalidPeriod": "Початкова дата має бути не пізніше кінцевої",
+    "slaInvalidOrder": "Час вирішення має бути не меншим за час першої відповіді",
+    "preset7d": "7 днів",
+    "preset30d": "30 днів",
+    "preset90d": "90 днів"
   }
 }

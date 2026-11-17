@@ -264,7 +264,16 @@
     "cannedTitle": "Title",
     "cannedBody": "Text",
     "cannedHint": "Placeholders: '{{'customerName'}}', '{{'ticketNumber'}}', '{{'agentName'}}'",
+    "cannedCategory": "Category",
+    "cannedEdit": "Edit",
+    "cannedEmpty": "No canned responses yet.",
     "add": "Add template",
-    "empty": "No data for this period"
+    "empty": "No data for this period",
+    "ratingsCount": "{count, plural, one {# rating} other {# ratings}}",
+    "invalidPeriod": "Start date must be on or before end date",
+    "slaInvalidOrder": "Resolution time must be at least first response time",
+    "preset7d": "7 days",
+    "preset30d": "30 days",
+    "preset90d": "90 days"
   }
 }
