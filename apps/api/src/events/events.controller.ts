@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, Param, Post, Res } from '@nestjs/common';
+import { Controller, Get, Headers, HttpCode, Param, Post, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { IdSchema } from '@helpdesk/shared';
@@ -22,11 +22,19 @@ export class EventsController {
   /**
    * Server-sent events: message.created, ticket.created, ticket.updated,
    * notification.created, typing. Cookie-authenticated, heartbeat comments every 20 s.
-   * No replay buffer: after a reconnect clients refetch (Last-Event-ID is not honoured).
+   * Replays missed non-typing events after Last-Event-ID from the in-memory ring buffer,
+   * still filtered through per-user permission queries.
    */
   @Get('events')
-  stream(@CurrentUser() user: AuthUser, @Res() res: Response): void {
-    this.events.subscribe(user, res);
+  stream(
+    @CurrentUser() user: AuthUser,
+    @Res() res: Response,
+    @Headers('last-event-id') lastEventIdHeader?: string,
+  ): void {
+    const raw = lastEventIdHeader?.trim();
+    const parsed = raw && /^\d+$/.test(raw) ? Number(raw) : undefined;
+    const lastEventId = parsed !== undefined && Number.isSafeInteger(parsed) ? parsed : undefined;
+    this.events.subscribe(user, res, lastEventId);
   }
 
   /** Extension: "X is replying" signal for other staff on the same ticket. */

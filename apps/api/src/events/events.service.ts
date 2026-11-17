@@ -22,6 +22,7 @@ interface Subscriber {
   user: AuthUser;
   res: Response;
   heartbeat: NodeJS.Timeout;
+  closed: boolean;
 }
 
 /**
@@ -32,8 +33,10 @@ interface Subscriber {
  */
 @Injectable()
 export class EventsService implements OnApplicationBootstrap, BeforeApplicationShutdown {
+  private static readonly REPLAY_LIMIT = 500;
   private readonly logger = new Logger('Events');
   private readonly subscribers = new Set<Subscriber>();
+  private readonly recent: { id: number; signal: RealtimeSignal }[] = [];
   private listener: Client | null = null;
   private closing = false;
   private nextId = 1;
@@ -92,8 +95,8 @@ export class EventsService implements OnApplicationBootstrap, BeforeApplicationS
     await this.connect();
   }
 
-  /** Opens the SSE stream for a user. */
-  subscribe(user: AuthUser, res: Response): void {
+  /** Opens the SSE stream for a user, replaying missed events when Last-Event-ID is given. */
+  subscribe(user: AuthUser, res: Response, lastEventId?: number): void {
     res.status(200).set({
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
@@ -106,31 +109,72 @@ export class EventsService implements OnApplicationBootstrap, BeforeApplicationS
     const sub: Subscriber = {
       user,
       res,
+      closed: false,
       heartbeat: setInterval(() => {
         res.write(': ping\n\n');
       }, SSE_HEARTBEAT_MS),
     };
-    this.subscribers.add(sub);
     res.on('close', () => {
+      sub.closed = true;
       clearInterval(sub.heartbeat);
       this.subscribers.delete(sub);
     });
+    if (lastEventId !== undefined && this.recent.some((entry) => entry.id > lastEventId)) {
+      void this.replayAndSubscribe(sub, lastEventId);
+    } else {
+      this.subscribers.add(sub);
+    }
+  }
+
+  private isOpen(sub: Subscriber): boolean {
+    return !this.closing && !sub.closed && !sub.res.writableEnded;
+  }
+
+  private async replayAndSubscribe(sub: Subscriber, lastEventId: number): Promise<void> {
+    let cursor = lastEventId;
+    try {
+      while (this.isOpen(sub)) {
+        const batch = this.recent.filter((entry) => entry.id > cursor);
+        if (batch.length === 0) break;
+        for (const entry of batch) {
+          cursor = entry.id;
+          const event = await this.buildEvent(sub.user, entry.signal);
+          if (!this.isOpen(sub)) return;
+          if (event) this.send(sub, entry.id, event);
+        }
+      }
+    } catch (err) {
+      this.logger.warn(`replay for ${sub.user.id} failed: ${String(err)}`);
+    }
+    if (this.closing) {
+      clearInterval(sub.heartbeat);
+      sub.res.end();
+    } else if (this.isOpen(sub)) {
+      this.subscribers.add(sub);
+    }
   }
 
   get connections(): number {
     return this.subscribers.size;
   }
 
-  private send(sub: Subscriber, event: ServerEvent): void {
-    sub.res.write(`id: ${this.nextId++}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+  private send(sub: Subscriber, id: number, event: ServerEvent): void {
+    sub.res.write(`id: ${id}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
   }
 
   private async dispatch(signal: RealtimeSignal): Promise<void> {
+    const id = this.nextId++;
+    if (signal.type !== 'typing') {
+      this.recent.push({ id, signal });
+      if (this.recent.length > EventsService.REPLAY_LIMIT) {
+        this.recent.splice(0, this.recent.length - EventsService.REPLAY_LIMIT);
+      }
+    }
     await Promise.all(
       [...this.subscribers].map(async (sub) => {
         try {
           const event = await this.buildEvent(sub.user, signal);
-          if (event && !sub.res.writableEnded) this.send(sub, event);
+          if (event && !sub.closed && !sub.res.writableEnded) this.send(sub, id, event);
         } catch (err) {
           this.logger.warn(`event for ${sub.user.id} failed: ${String(err)}`);
         }

@@ -31,35 +31,40 @@ async function cookieFor(user: TestUser): Promise<string> {
 
 interface Stream {
   events: ServerEvent[];
+  ids: string[];
   raw: () => string;
   close: () => void;
   status: number;
 }
 
-async function openStream(cookie?: string): Promise<Stream> {
+async function openStream(cookie?: string, lastEventId?: string): Promise<Stream> {
   return new Promise((resolve, reject) => {
     const events: ServerEvent[] = [];
+    const ids: string[] = [];
     let raw = '';
-    const req = http.get(
-      { port, path: '/events', headers: cookie ? { Cookie: cookie } : {} },
-      (res) => {
-        res.setEncoding('utf8');
-        res.on('data', (chunk: string) => {
-          raw += chunk;
-          for (const m of chunk.matchAll(/^data: (.*)$/gm)) {
-            events.push(JSON.parse(m[1]!) as ServerEvent);
-          }
-        });
-        const status = res.statusCode ?? 0;
-        // wait for the ': connected' preamble
-        const t = setInterval(() => {
-          if (status !== 200 || raw.includes(': connected')) {
-            clearInterval(t);
-            resolve({ events, raw: () => raw, close: () => req.destroy(), status });
-          }
-        }, 10);
-      },
-    );
+    const headers: Record<string, string> = {};
+    if (cookie) headers.Cookie = cookie;
+    if (lastEventId !== undefined) headers['Last-Event-ID'] = lastEventId;
+    const req = http.get({ port, path: '/events', headers }, (res) => {
+      res.setEncoding('utf8');
+      res.on('data', (chunk: string) => {
+        raw += chunk;
+        for (const m of chunk.matchAll(/^id: (.*)$/gm)) {
+          ids.push(m[1]!);
+        }
+        for (const m of chunk.matchAll(/^data: (.*)$/gm)) {
+          events.push(JSON.parse(m[1]!) as ServerEvent);
+        }
+      });
+      const status = res.statusCode ?? 0;
+      // wait for the ': connected' preamble
+      const t = setInterval(() => {
+        if (status !== 200 || raw.includes(': connected')) {
+          clearInterval(t);
+          resolve({ events, ids, raw: () => raw, close: () => req.destroy(), status });
+        }
+      }, 10);
+    });
     req.on('error', (e) => {
       if ((e as NodeJS.ErrnoException).code !== 'ECONNRESET') reject(e);
     });
@@ -150,5 +155,67 @@ describe('GET /events', () => {
     [customer, lead, self].forEach((s) => {
       s.close();
     });
+  });
+
+  it('replays missed events after Last-Event-ID while keeping internal notes hidden', async () => {
+    const t = await createTicket(w.as.customer);
+    const customerCookie = await cookieFor(w.customer);
+    const staffCookie = await cookieFor(w.billingAgent);
+
+    // Establish initial stream and capture the last event ID seen before disconnecting.
+    const initial = await openStream(customerCookie);
+    await w.as.billingAgent
+      .post(`/tickets/${t.id}/messages`)
+      .send({ clientMessageId: randomUUID(), body: 'before disconnect' });
+    await until(() => initial.events.some((e) => e.type === 'message.created'));
+    const lastSeenId = initial.ids.at(-1);
+    expect(lastSeenId).toMatch(/^\d+$/);
+    initial.close();
+    await wait(50);
+
+    // Emit an internal note and a public reply while disconnected (plus typing, which should not replay).
+    await w.as.billingAgent
+      .post(`/tickets/${t.id}/messages`)
+      .send({ clientMessageId: randomUUID(), body: 'hidden replay note', internal: true });
+    await w.as.billingAgent
+      .post(`/tickets/${t.id}/messages`)
+      .send({ clientMessageId: randomUUID(), body: 'missed public reply' });
+    await w.as.billingAgent.post(`/tickets/${t.id}/typing`);
+    await wait(150);
+
+    // Customer reconnects with Last-Event-ID -> only missed public reply (and updates), never old events or internal note.
+    const reconnectedCustomer = await openStream(customerCookie, lastSeenId);
+    await until(() =>
+      reconnectedCustomer.events.some(
+        (e) => e.type === 'message.created' && e.message.body === 'missed public reply',
+      ),
+    );
+    await wait(200);
+    const customerBodies = reconnectedCustomer.events
+      .filter((e) => e.type === 'message.created')
+      .map((e) => e.message.body);
+    expect(customerBodies).toEqual(['missed public reply']);
+    expect(reconnectedCustomer.raw()).not.toContain('hidden replay note');
+    expect(reconnectedCustomer.raw()).not.toContain('before disconnect');
+    expect(reconnectedCustomer.events.some((e) => e.type === 'typing')).toBe(false);
+    expect(reconnectedCustomer.ids.every((id) => Number(id) > Number(lastSeenId))).toBe(true);
+
+    // Staff reconnecting from the same Last-Event-ID receives both the internal note and the public reply.
+    const reconnectedStaff = await openStream(staffCookie, lastSeenId);
+    await until(
+      () => reconnectedStaff.events.filter((e) => e.type === 'message.created').length >= 2,
+    );
+    const staffBodies = reconnectedStaff.events
+      .filter((e) => e.type === 'message.created')
+      .map((e) => e.message.body);
+    expect(staffBodies).toEqual(['hidden replay note', 'missed public reply']);
+
+    // Invalid Last-Event-ID is safely ignored.
+    const invalid = await openStream(customerCookie, 'not-a-number');
+    expect(invalid.status).toBe(200);
+
+    reconnectedCustomer.close();
+    reconnectedStaff.close();
+    invalid.close();
   });
 });

@@ -54,4 +54,3 @@ export class TestHooksController {
     return { closed };
   }
 }
-
