@@ -5,7 +5,7 @@ import { and, eq, gt, or, sql } from 'drizzle-orm';
 import { APP_CONFIG, type AppConfig } from '../config.js';
 import { Clock } from '../common/clock.js';
 import { ApiError } from '../common/errors.js';
-import { DB, type Db } from '../db/db.js';
+import { DB, type Db, type DbOrTx } from '../db/db.js';
 import { loginAttempts, sessions, users } from '../db/schema.js';
 import type { AuthUser } from './auth.types.js';
 
@@ -27,10 +27,10 @@ export class AuthService {
   ) {}
 
   /** Throws 429 if this email or IP has too many recent failures. */
-  async assertNotLimited(email: string, ip: string): Promise<void> {
+  async assertNotLimited(db: DbOrTx, email: string, ip: string): Promise<void> {
     const now = this.clock.now();
     const windowStart = new Date(now.getTime() - this.config.LOGIN_WINDOW_MINUTES * 60_000);
-    const rows = await this.db
+    const rows = await db
       .select({
         byEmail: sql<number>`count(*) filter (where ${loginAttempts.email} = ${email})::int`,
         byIp: sql<number>`count(*) filter (where ${loginAttempts.ip} = ${ip})::int`,
@@ -71,16 +71,33 @@ export class AuthService {
     password: string,
     ip: string,
   ): Promise<{ user: AuthUser; token: string; expiresAt: Date }> {
-    await this.assertNotLimited(email, ip);
+    // Check-and-record atomically: the attempt is stored *before* the password is verified,
+    // under per-email and per-IP advisory locks, so parallel guesses cannot all slip through
+    // the check. A successful login removes the email's attempts again.
+    const attemptId = await this.db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'login:email:' + email}))`);
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'login:ip:' + ip}))`);
+      await this.assertNotLimited(tx, email, ip);
+      const [attempt] = await tx
+        .insert(loginAttempts)
+        .values({ email, ip, attemptedAt: this.clock.now() })
+        .returning({ id: loginAttempts.id });
+      return attempt?.id;
+    });
     const [row] = await this.db.select().from(users).where(eq(users.email, email)).limit(1);
     const ok = row
       ? await verify(row.passwordHash, password).catch(() => false)
       : await this.verifyDummy(password);
     if (!row || !ok) {
-      await this.db.insert(loginAttempts).values({ email, ip, attemptedAt: this.clock.now() });
       throw new ApiError(401, 'invalid_credentials', 'Invalid email or password');
     }
-    await this.db.delete(loginAttempts).where(eq(loginAttempts.email, email));
+    await this.db
+      .delete(loginAttempts)
+      .where(
+        attemptId === undefined
+          ? eq(loginAttempts.email, email)
+          : or(eq(loginAttempts.email, email), eq(loginAttempts.id, attemptId)),
+      );
 
     const token = randomBytes(32).toString('base64url');
     const expiresAt = new Date(

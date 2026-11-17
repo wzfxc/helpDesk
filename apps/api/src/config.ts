@@ -8,6 +8,8 @@ const EnvSchema = z.object({
   DATABASE_URL: z.string().default('postgres://helpdesk:helpdesk@localhost:5432/helpdesk'),
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(20),
   COOKIE_SECURE: bool.default(false),
+  /** express 'trust proxy' value: which hops may set X-Forwarded-For. */
+  TRUST_PROXY: z.string().default('loopback, linklocal, uniquelocal'),
   SESSION_TTL_HOURS: z.coerce.number().positive().default(168),
   ATTACHMENTS_DIR: z.string().default('./data/attachments'),
   WORKER_ENABLED: bool.default(true),

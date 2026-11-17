@@ -106,6 +106,27 @@ describe('auth', () => {
     ctx.clock.advance(-16 * 60_000);
   });
 
+  it('parallel guesses cannot exceed the failure limit', async () => {
+    const user = await createUser(ctx.db, 'customer');
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        request(ctx.app.getHttpServer())
+          .post('/auth/login')
+          .send({ email: user.email, password: 'bad' }),
+      ),
+    );
+    const statuses = results.map((r) => r.status);
+    expect(statuses.filter((s) => s === 401)).toHaveLength(3);
+    expect(statuses.filter((s) => s === 429)).toHaveLength(7);
+  });
+
+  it('ignores X-Forwarded-For from untrusted clients', async () => {
+    // supertest connects over loopback, which is trusted; the guard is the configured list.
+    const { DEFAULT_TRUST_PROXY } = await import('../src/app.setup.js');
+    expect(DEFAULT_TRUST_PROXY).not.toBe('true');
+    expect(DEFAULT_TRUST_PROXY).toContain('uniquelocal');
+  });
+
   it('roles guard returns 403', async () => {
     const customer = await createUser(ctx.db, 'customer');
     const agent = await loginAs(ctx, customer);

@@ -5,12 +5,14 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { sendApiError, toApiError } from './common/error.filter.js';
 
 const JSON_LIMIT = '1mb';
+export const DEFAULT_TRUST_PROXY = 'loopback, linklocal, uniquelocal';
 
 /** Shared between main.ts and integration tests so both run the exact same pipeline. */
-export function configureApp(app: INestApplication): void {
+export function configureApp(app: INestApplication, trustProxy = DEFAULT_TRUST_PROXY): void {
   const http = app.getHttpAdapter().getInstance() as express.Express;
-  // Behind the Next.js proxy: use X-Forwarded-For for the client IP (login rate limiting).
-  http.set('trust proxy', true);
+  // Behind the Next.js proxy: honour X-Forwarded-For only from trusted (private network) hops,
+  // so a direct client cannot spoof its IP to dodge per-IP login limits.
+  http.set('trust proxy', trustProxy);
   http.disable('x-powered-by');
 
   const json = express.json({ limit: JSON_LIMIT });

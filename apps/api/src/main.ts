@@ -7,7 +7,7 @@ import { loadConfig } from './config.js';
 async function bootstrap(): Promise<void> {
   const config = loadConfig();
   const app = await NestFactory.create(AppModule.forRoot(), { bodyParser: false });
-  configureApp(app);
+  configureApp(app, config.TRUST_PROXY);
   app.enableShutdownHooks();
   await app.listen(config.API_PORT);
 }
