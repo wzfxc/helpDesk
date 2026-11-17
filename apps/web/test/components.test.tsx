@@ -186,6 +186,9 @@ describe('Composer', () => {
       });
     });
     expect(textarea).toHaveValue('');
+    await waitFor(() => {
+      expect(textarea).toHaveFocus();
+    });
   });
 });
 

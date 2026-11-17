@@ -1,9 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import type { Priority, SlaPolicy, Status } from '@helpdesk/shared';
+import { APP_CONFIG, type AppConfig } from '../config.js';
 import type { DbOrTx } from '../db/db.js';
 import { FAR_FUTURE, slaPauses, slaPolicies, type TicketRow } from '../db/schema.js';
-import type { Pause } from './business-time.js';
+import {
+  createKyivCalendar,
+  parseHolidays,
+  type BusinessCalendar,
+  type Pause,
+} from './business-time.js';
 import { computeDeadlines, isPausedStatus, nextDueAt } from './deadlines.js';
 
 export interface SlaFields {
@@ -21,6 +27,12 @@ export interface SlaFields {
  */
 @Injectable()
 export class SlaService {
+  readonly calendar: BusinessCalendar;
+
+  constructor(@Optional() @Inject(APP_CONFIG) config?: AppConfig) {
+    this.calendar = createKyivCalendar(parseHolidays(config?.SLA_HOLIDAYS));
+  }
+
   async policies(db: DbOrTx): Promise<SlaPolicy[]> {
     return db
       .select({
@@ -57,7 +69,7 @@ export class SlaService {
   /** Fields for a brand-new ticket. */
   async initial(db: DbOrTx, priority: Priority, createdAt: Date): Promise<SlaFields> {
     const policy = await this.policy(db, priority);
-    const due = computeDeadlines(createdAt, policy, []);
+    const due = computeDeadlines(createdAt, policy, [], this.calendar);
     const next = nextDueAt({ status: 'new', firstRespondedAt: null, ...due });
     return { ...due, nextDueAt: next, slaSortAt: next ?? FAR_FUTURE, slaPausedAt: null };
   }
@@ -98,13 +110,13 @@ export class SlaService {
     if (opts.priorityChanged || (wasPaused && !nowPaused)) {
       const policy = await this.policy(db, ticket.priority);
       const pauses = await this.pauses(db, ticket.id);
-      const due = computeDeadlines(ticket.createdAt, policy, pauses);
+      const due = computeDeadlines(ticket.createdAt, policy, pauses, this.calendar);
       // While paused the deadline is unknown; keep the last known value for display.
       firstResponseDueAt = due.firstResponseDueAt ?? firstResponseDueAt;
       resolutionDueAt = due.resolutionDueAt ?? resolutionDueAt;
       if (opts.priorityChanged && nowPaused) {
         const closedOnly = pauses.map((p) => ({ start: p.start, end: p.end ?? opts.now }));
-        const shown = computeDeadlines(ticket.createdAt, policy, closedOnly);
+        const shown = computeDeadlines(ticket.createdAt, policy, closedOnly, this.calendar);
         firstResponseDueAt = shown.firstResponseDueAt;
         resolutionDueAt = shown.resolutionDueAt;
       }

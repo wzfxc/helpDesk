@@ -89,6 +89,7 @@ export function Composer({ ticket, me }: { ticket: Ticket; me: Me }) {
   const uploads = useUploads();
   const [draft, setDraft] = useState<Draft | null>(null);
   const loadedFor = useRef<string | null>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
   const lastTyping = useRef(0);
   const { data: canned } = useCanned(staff);
 
@@ -130,6 +131,9 @@ export function Composer({ ticket, me }: { ticket: Ticket; me: Me }) {
         replaceTicket(appendMessage(d, resp.message), resp.ticket),
       );
       void qc.invalidateQueries({ queryKey: ['tickets'], refetchType: 'none' });
+      requestAnimationFrame(() => {
+        bodyRef.current?.focus();
+      });
     },
   });
 
@@ -232,6 +236,7 @@ export function Composer({ ticket, me }: { ticket: Ticket; me: Me }) {
           {t('label')}
         </label>
         <textarea
+          ref={bodyRef}
           id="composer-body"
           rows={5}
           className={inputClass}

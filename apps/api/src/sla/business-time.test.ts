@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SLA_POLICIES, type Priority } from '@helpdesk/shared';
-import { addBusinessMinutes, businessMinutesBetween } from './business-time.js';
+import {
+  addBusinessMinutes,
+  businessMinutesBetween,
+  createKyivCalendar,
+  parseHolidays,
+} from './business-time.js';
 import { computeDeadlines, nextDueAt } from './deadlines.js';
 
 const d = (iso: string) => new Date(iso);
@@ -158,5 +163,29 @@ describe('nextDueAt', () => {
     for (const status of ['pending', 'resolved', 'closed'] as const) {
       expect(nextDueAt({ ...base, status, firstRespondedAt: null })).toBeNull();
     }
+  });
+});
+
+describe('holiday calendar support', () => {
+  it('parses YYYY-MM-DD holiday lists and ignores invalid tokens', () => {
+    expect(parseHolidays('2025-01-01, invalid, 2025-05-01 , 2025-1-2')).toEqual([
+      '2025-01-01',
+      '2025-05-01',
+    ]);
+    expect(parseHolidays('')).toEqual([]);
+  });
+
+  it('skips configured holidays when computing deadlines and elapsed minutes', () => {
+    const cal = createKyivCalendar(['2025-01-13']); // Mon 2025-01-13 is a holiday
+    const fri17 = d('2025-01-10T15:00:00Z'); // Fri 17:00 Kyiv (UTC+2)
+    // High policy: firstResponse = 240m (60m Fri + 180m Tue 09:00-12:00 because Mon is skipped)
+    const due = computeDeadlines(fri17, policy('high'), [], cal);
+    expect(due.firstResponseDueAt).toEqual(d('2025-01-14T10:00:00Z')); // Tue 12:00 Kyiv
+
+    // Mon holiday contributes 0 business minutes
+    expect(businessMinutesBetween(fri17, d('2025-01-14T10:00:00Z'), [], cal)).toBe(240);
+    expect(addBusinessMinutes(d('2025-01-13T08:00:00Z'), 30, [], cal)).toEqual(
+      d('2025-01-14T07:30:00Z'),
+    ); // Tue 09:30 Kyiv
   });
 });

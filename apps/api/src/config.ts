@@ -23,6 +23,7 @@ const EnvSchema = z.object({
   SEED_CUSTOMER_PASSWORD: z.string().min(1).default('customer123'),
   SEED_AGENT_PASSWORD: z.string().min(1).default('agent123'),
   SEED_LEAD_PASSWORD: z.string().min(1).default('lead123'),
+  SLA_HOLIDAYS: z.string().default(''),
   ENABLE_TEST_HOOKS: bool.default(false),
 });
 

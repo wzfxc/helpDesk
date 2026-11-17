@@ -12,14 +12,29 @@ export interface BusinessCalendar {
   /** Minutes after local midnight. */
   startMinute: number;
   endMinute: number;
+  /** Optional local calendar dates (`YYYY-MM-DD`) excluded from business hours. */
+  holidays?: readonly string[];
 }
 
-export const KYIV_CALENDAR: BusinessCalendar = {
-  timeZone: 'Europe/Kyiv',
-  workDays: [1, 2, 3, 4, 5],
-  startMinute: 9 * 60,
-  endMinute: 18 * 60,
-};
+export function createKyivCalendar(holidays: readonly string[] = []): BusinessCalendar {
+  return {
+    timeZone: 'Europe/Kyiv',
+    workDays: [1, 2, 3, 4, 5],
+    startMinute: 9 * 60,
+    endMinute: 18 * 60,
+    ...(holidays.length > 0 ? { holidays } : {}),
+  };
+}
+
+export function parseHolidays(raw?: string): string[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => /^\d{4}-\d{2}-\d{2}$/.test(s));
+}
+
+export const KYIV_CALENDAR: BusinessCalendar = createKyivCalendar();
 
 /** Interval during which timers are stopped. `end: null` = still paused. */
 export interface Pause {
@@ -40,13 +55,15 @@ const windowCache = new Map<string, Window | null>();
 
 /** Business window of one local calendar day (cached: TZDate construction is relatively slow). */
 function localDayWindow(y: number, m: number, d: number, cal: BusinessCalendar): Window | null {
-  const key = `${cal.timeZone}|${cal.startMinute}|${cal.endMinute}|${cal.workDays.join('')}|${y}-${m}-${d}`;
+  const holidayKey = cal.holidays?.join(',') ?? '';
+  const key = `${cal.timeZone}|${cal.startMinute}|${cal.endMinute}|${cal.workDays.join('')}|${holidayKey}|${y}-${m}-${d}`;
   const cached = windowCache.get(key);
   if (cached !== undefined) return cached;
   // The weekday of a calendar date does not depend on the time zone.
   const weekday = new Date(Date.UTC(y, m, d)).getUTCDay();
+  const isoDate = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
   let window: Window | null = null;
-  if (cal.workDays.includes(weekday)) {
+  if (cal.workDays.includes(weekday) && !cal.holidays?.includes(isoDate)) {
     const at = (minute: number) =>
       new TZDate(y, m, d, Math.floor(minute / 60), minute % 60, 0, cal.timeZone).getTime();
     window = { start: at(cal.startMinute), end: at(cal.endMinute) };
