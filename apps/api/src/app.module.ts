@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { HealthController } from './health/health.controller.js';
 import { CoreModule } from './core.module.js';
 import { TicketsModule } from './tickets/tickets.module.js';
+import { AttachmentsModule } from './attachments/attachments.module.js';
 
 @Module({})
 export class AppModule {
@@ -22,6 +23,7 @@ export class AppModule {
         CoreModule,
         AuthModule,
         TicketsModule,
+        AttachmentsModule,
       ],
       controllers: [HealthController],
       providers: [{ provide: APP_FILTER, useClass: ApiErrorFilter }],
