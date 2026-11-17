@@ -15,6 +15,9 @@ const nextConfig: NextConfig = {
   // Compression buffers chunks and would delay server-sent events.
   compress: false,
   poweredByHeader: false,
+  // The rewrite proxy buffers at most this much of a request body; the default (10 MB) would
+  // truncate valid 10 MB attachment uploads and break multipart parsing in the api.
+  experimental: { middlewareClientMaxBodySize: '25mb' },
   // Linting runs as its own step (pnpm lint / CI), not inside next build.
   eslint: { ignoreDuringBuilds: true },
   // Same-origin API access: the session cookie works without CORS, locally and in docker.
