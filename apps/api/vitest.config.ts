@@ -8,8 +8,15 @@ export default defineConfig({
   ],
   test: {
     include: ['src/**/*.test.ts', 'test/**/*.test.ts'],
+    globalSetup: ['test/global-setup.ts'],
+    // Integration tests share one real PostgreSQL database and reset it between files.
+    fileParallelism: false,
     passWithNoTests: true,
     testTimeout: 30_000,
     hookTimeout: 60_000,
+    env: {
+      NODE_ENV: 'test',
+      WORKER_ENABLED: 'false',
+    },
   },
 });

@@ -1,7 +1,7 @@
 # Disposable PostgreSQL for integration tests and benchmarks (pnpm db:test:up).
 services:
   postgres-test:
-    image: postgres:16-alpine
+    image: postgres:16
     environment:
       POSTGRES_USER: helpdesk
       POSTGRES_PASSWORD: helpdesk
