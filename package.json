@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@12.21.0",
   "engines": {
-    "node": ">=20.19"
+    "node": ">=22"
   },
   "scripts": {
     "build:shared": "pnpm --filter @helpdesk/shared build",
