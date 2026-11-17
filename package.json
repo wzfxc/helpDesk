@@ -1,0 +1,36 @@
+{
+  "name": "helpdesk",
+  "private": true,
+  "packageManager": "pnpm@12.21.0",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "build:shared": "pnpm --filter @helpdesk/shared build",
+    "build": "pnpm -r --workspace-concurrency=1 build",
+    "lint": "pnpm build:shared && eslint . --max-warnings=0",
+    "typecheck": "pnpm build:shared && pnpm -r --parallel typecheck",
+    "test": "pnpm build:shared && pnpm -r --workspace-concurrency=1 --filter=!@helpdesk/e2e test",
+    "test:api": "pnpm build:shared && pnpm --filter @helpdesk/api test",
+    "test:web": "pnpm build:shared && pnpm --filter @helpdesk/web test",
+    "test:e2e": "pnpm --filter @helpdesk/e2e test",
+    "db:migrate": "pnpm --filter @helpdesk/api db:migrate",
+    "db:seed": "pnpm --filter @helpdesk/api db:seed",
+    "db:test:up": "docker compose -f docker-compose.test.yml up -d --wait",
+    "db:test:down": "docker compose -f docker-compose.test.yml down -v",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@types/node": "^22.10.0",
+    "eslint": "^9.39.0",
+    "eslint-config-prettier": "^10.1.0",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^16.0.0",
+    "prettier": "^3.6.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.0"
+  }
+}
