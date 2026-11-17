@@ -11,8 +11,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-helpdesk}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-helpdesk}
       POSTGRES_DB: ${POSTGRES_DB:-helpdesk}
+    # Loopback only: the database is for local tools (psql, bench), never for the network.
     ports:
-      - '${POSTGRES_PORT:-5432}:5432'
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -44,8 +45,15 @@ services:
       SEED_LEAD_PASSWORD: ${SEED_LEAD_PASSWORD:-lead123}
       SLA_HOLIDAYS: ${SLA_HOLIDAYS:-}
       ENABLE_TEST_HOOKS: ${ENABLE_TEST_HOOKS:-false}
+      TRUST_PROXY: ${TRUST_PROXY:-loopback, linklocal, uniquelocal}
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-20}
+      DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-10000}
+      LOGIN_MAX_FAILURES: ${LOGIN_MAX_FAILURES:-5}
+      RATE_LIMITS_ENABLED: ${RATE_LIMITS_ENABLED:-true}
+    # Loopback only: browsers reach the api through the web proxy (/api/*), so only local
+    # tools (curl, Swagger at /docs) need this port.
     ports:
-      - '${API_PORT:-4000}:4000'
+      - '127.0.0.1:${API_PORT:-4000}:4000'
     volumes:
       - attachments:/data/attachments
     stop_grace_period: 20s
