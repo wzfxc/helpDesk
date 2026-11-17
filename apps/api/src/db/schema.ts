@@ -173,6 +173,10 @@ export const tickets = pgTable(
     index('tickets_resolved_at_idx')
       .on(t.resolvedAt)
       .where(sql`status = 'resolved'`),
+    // /stats: tickets resolved per assignee in a period (any status, incl. closed)
+    index('tickets_assignee_resolved_idx')
+      .on(t.assigneeId, t.resolvedAt)
+      .where(sql`resolved_at is not null`),
     check(
       'tickets_status_ck',
       sql`${t.status} in ('new', 'open', 'pending', 'resolved', 'closed')`,
@@ -214,6 +218,10 @@ export const messages = pgTable(
       .using('gin', t.searchVector)
       .where(sql`not internal`),
     index('messages_author_created_idx').on(t.authorId, t.createdAt),
+    // /stats: public replies per agent in a period
+    index('messages_staff_reply_idx')
+      .on(t.authorId, t.createdAt)
+      .where(sql`not internal`),
   ],
 );
 

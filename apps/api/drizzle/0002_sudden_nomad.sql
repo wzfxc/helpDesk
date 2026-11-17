@@ -1,0 +1,2 @@
+CREATE INDEX "messages_staff_reply_idx" ON "messages" USING btree ("author_id","created_at") WHERE not internal;--> statement-breakpoint
+CREATE INDEX "tickets_assignee_resolved_idx" ON "tickets" USING btree ("assignee_id","resolved_at") WHERE resolved_at is not null;

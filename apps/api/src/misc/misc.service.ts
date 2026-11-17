@@ -16,8 +16,14 @@ import type { AuthUser } from '../auth/auth.types.js';
 import { Clock } from '../common/clock.js';
 import { notFound } from '../common/errors.js';
 import { DB, type Db } from '../db/db.js';
-import { cannedResponses, notifications, savedViews, slaPolicies } from '../db/schema.js';
-import { businessMinutesBetween, type Pause } from '../sla/business-time.js';
+import {
+  cannedResponses,
+  notifications,
+  savedViews,
+  slaPauses,
+  slaPolicies,
+} from '../db/schema.js';
+import { createBusinessMinutes, type Pause } from '../sla/business-time.js';
 import { SlaService } from '../sla/sla.service.js';
 
 const iso = (d: Date | null): string | null => (d ? new Date(d).toISOString() : null);
@@ -204,46 +210,89 @@ export class MiscService {
     const c = counts.rows[0];
 
     // Averages are measured in business minutes (the same clock as the SLA), net of pauses.
-    const sample = await this.db.execute<{
-      id: string;
-      created_at: Date;
-      first_responded_at: Date | null;
-      resolved_at: Date | null;
+    // Fast path: tickets without pauses (the vast majority) travel as three packed float8
+    // arrays (epoch ms) in ONE row; shipping 20 000 separate rows costs more than the SQL itself.
+    const inPeriod = sql`((t.first_responded_at >= ${from} and t.first_responded_at < ${to})
+      or (t.resolved_at >= ${from} and t.resolved_at < ${to}))`;
+    const packed = await this.db.execute<{
+      created: number[] | null;
+      first: (number | null)[] | null;
+      resolved: (number | null)[] | null;
     }>(sql`
-      select id, created_at, first_responded_at, resolved_at from tickets
-      where (first_responded_at >= ${from} and first_responded_at < ${to})
-         or (resolved_at >= ${from} and resolved_at < ${to})`);
-    const pauseRows = sample.rows.length
-      ? await this.db.execute<{ ticket_id: string; started_at: Date; ended_at: Date | null }>(sql`
-          select ticket_id, started_at, ended_at from sla_pauses
-          where ticket_id in (
-            select id from tickets
-            where (first_responded_at >= ${from} and first_responded_at < ${to})
-               or (resolved_at >= ${from} and resolved_at < ${to}))`)
-      : { rows: [] };
+      select
+        json_agg((extract(epoch from t.created_at) * 1000)::float8) as created,
+        json_agg((extract(epoch from t.first_responded_at) * 1000)::float8) as first,
+        json_agg((extract(epoch from t.resolved_at) * 1000)::float8) as resolved
+      from tickets t
+      where ${inPeriod} and not exists (select 1 from sla_pauses p where p.ticket_id = t.id)`);
+    // Tickets that were ever paused (a few percent) are fetched row by row with their pauses.
+    const pausedRows = await this.db.execute<{
+      id: string;
+      created_ms: number;
+      first_ms: number | null;
+      resolved_ms: number | null;
+    }>(sql`
+      select t.id,
+        (extract(epoch from t.created_at) * 1000)::float8 as created_ms,
+        (extract(epoch from t.first_responded_at) * 1000)::float8 as first_ms,
+        (extract(epoch from t.resolved_at) * 1000)::float8 as resolved_ms
+      from tickets t
+      where ${inPeriod} and exists (select 1 from sla_pauses p where p.ticket_id = t.id)`);
+    const pauseRows = pausedRows.rows.length
+      ? await this.db
+          .select()
+          .from(slaPauses)
+          .where(
+            inArray(
+              slaPauses.ticketId,
+              pausedRows.rows.map((r) => r.id),
+            ),
+          )
+      : [];
     const pausesBy = new Map<string, Pause[]>();
-    for (const p of pauseRows.rows) {
-      const list = pausesBy.get(p.ticket_id) ?? [];
-      list.push({ start: new Date(p.started_at), end: p.ended_at ? new Date(p.ended_at) : null });
-      pausesBy.set(p.ticket_id, list);
+    for (const p of pauseRows) {
+      const list = pausesBy.get(p.ticketId) ?? [];
+      list.push({ start: new Date(p.startedAt), end: p.endedAt ? new Date(p.endedAt) : null });
+      pausesBy.set(p.ticketId, list);
     }
-    const firsts: number[] = [];
-    const resolutions: number[] = [];
-    for (const t of sample.rows) {
-      const created = new Date(t.created_at);
-      const pauses = pausesBy.get(t.id) ?? [];
-      if (t.first_responded_at) {
-        const at = new Date(t.first_responded_at);
-        if (at >= from && at < to) firsts.push(businessMinutesBetween(created, at, pauses));
-      }
-      if (t.resolved_at) {
-        const at = new Date(t.resolved_at);
-        if (at >= from && at < to) resolutions.push(businessMinutesBetween(created, at, pauses));
-      }
-    }
-    const avg = (xs: number[]): number | null =>
-      xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10) / 10 : null;
 
+    const fromMs = from.getTime();
+    const toMs = to.getTime();
+    const plainCreated = packed.rows[0]?.created ?? [];
+    const plainFirst = packed.rows[0]?.first ?? [];
+    const plainResolved = packed.rows[0]?.resolved ?? [];
+    const earliest = Math.min(
+      ...plainCreated,
+      ...pausedRows.rows.map((r) => r.created_ms),
+      Number.POSITIVE_INFINITY,
+    );
+    const clock = createBusinessMinutes(new Date(earliest), to);
+    let firstSum = 0;
+    let firstN = 0;
+    let resolutionSum = 0;
+    let resolutionN = 0;
+    const add = (
+      createdMs: number,
+      firstMs: number | null,
+      resolvedMs: number | null,
+      pauses?: Pause[],
+    ): void => {
+      if (firstMs !== null && firstMs >= fromMs && firstMs < toMs) {
+        firstSum += clock(createdMs, firstMs, pauses);
+        firstN += 1;
+      }
+      if (resolvedMs !== null && resolvedMs >= fromMs && resolvedMs < toMs) {
+        resolutionSum += clock(createdMs, resolvedMs, pauses);
+        resolutionN += 1;
+      }
+    };
+    for (let i = 0; i < plainCreated.length; i++) {
+      add(plainCreated[i] as number, plainFirst[i] ?? null, plainResolved[i] ?? null);
+    }
+    for (const r of pausedRows.rows)
+      add(r.created_ms, r.first_ms, r.resolved_ms, pausesBy.get(r.id));
+    const avg = (sum: number, n: number): number | null =>
+      n ? Math.round((sum / n) * 10) / 10 : null;
     const agents = await this.db.execute<{
       id: string;
       name: string;
@@ -266,8 +315,8 @@ export class MiscService {
       to: to.toISOString(),
       created,
       resolved: c?.resolved ?? 0,
-      avgFirstResponseMinutes: avg(firsts),
-      avgResolutionMinutes: avg(resolutions),
+      avgFirstResponseMinutes: avg(firstSum, firstN),
+      avgResolutionMinutes: avg(resolutionSum, resolutionN),
       slaBreachRate: created > 0 ? Math.round(((c?.breached ?? 0) / created) * 1000) / 1000 : null,
       avgRating:
         c?.avg_rating === null || c?.avg_rating === undefined

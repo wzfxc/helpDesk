@@ -3,6 +3,7 @@ import { DEFAULT_SLA_POLICIES, type Priority } from '@helpdesk/shared';
 import {
   addBusinessMinutes,
   businessMinutesBetween,
+  createBusinessMinutes,
   createKyivCalendar,
   parseHolidays,
 } from './business-time.js';
@@ -187,5 +188,59 @@ describe('holiday calendar support', () => {
     expect(addBusinessMinutes(d('2025-01-13T08:00:00Z'), 30, [], cal)).toEqual(
       d('2025-01-14T07:30:00Z'),
     ); // Tue 09:30 Kyiv
+  });
+});
+
+describe('createBusinessMinutes (fast path used by /stats)', () => {
+  it('matches businessMinutesBetween for random intervals across DST changes and holidays', () => {
+    const range = [d('2025-01-01T00:00:00Z'), d('2025-12-31T00:00:00Z')] as const;
+    for (const cal of [createKyivCalendar(), createKyivCalendar(['2025-03-10', '2025-08-25'])]) {
+      const fast = createBusinessMinutes(range[0], range[1], cal);
+      let seed = 12345;
+      const rnd = () => {
+        seed = (seed * 1664525 + 1013904223) % 4294967296;
+        return seed / 4294967296;
+      };
+      const span = range[1].getTime() - range[0].getTime();
+      for (let i = 0; i < 400; i++) {
+        const a = range[0].getTime() + Math.floor(rnd() * span * 0.9);
+        const b = a + Math.floor(rnd() * 20 * 24 * 3_600_000);
+        const end = Math.min(b, range[1].getTime());
+        expect(fast(a, end)).toBeCloseTo(
+          businessMinutesBetween(new Date(a), new Date(end), [], cal),
+          6,
+        );
+      }
+    }
+  });
+
+  it('subtracts pauses exactly like businessMinutesBetween (incl. overlapping and open pauses)', () => {
+    const range = [d('2025-01-01T00:00:00Z'), d('2025-12-31T00:00:00Z')] as const;
+    const fast = createBusinessMinutes(range[0], range[1]);
+    let seed = 777;
+    const rnd = () => {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return seed / 4294967296;
+    };
+    const day = 24 * 3_600_000;
+    for (let i = 0; i < 300; i++) {
+      const a = range[0].getTime() + Math.floor(rnd() * 200 * day);
+      const b = a + Math.floor(rnd() * 30 * day);
+      const pauses = Array.from({ length: Math.floor(rnd() * 4) }, () => {
+        const s = a - day + Math.floor(rnd() * 32 * day);
+        const open = rnd() < 0.15;
+        return { start: new Date(s), end: open ? null : new Date(s + Math.floor(rnd() * 6 * day)) };
+      });
+      expect(fast(a, b, pauses)).toBeCloseTo(
+        businessMinutesBetween(new Date(a), new Date(b), pauses),
+        6,
+      );
+    }
+  });
+
+  it('returns 0 for empty or reversed intervals', () => {
+    const fast = createBusinessMinutes(d('2025-01-01T00:00:00Z'), d('2025-02-01T00:00:00Z'));
+    expect(fast(1000, 1000)).toBe(0);
+    expect(fast(2000, 1000)).toBe(0);
   });
 });

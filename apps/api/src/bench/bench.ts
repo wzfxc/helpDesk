@@ -8,8 +8,10 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 import { TicketListQuerySchema, type TicketListQueryInput } from '@helpdesk/shared';
 import type { AuthUser } from '../auth/auth.types.js';
 import { loadConfig } from '../config.js';
+import { SystemClock } from '../common/clock.js';
 import { createDb, createPool } from '../db/db.js';
 import { runMigrations } from '../db/migrate.js';
+import { MiscService } from '../misc/misc.service.js';
 import { seed } from '../db/seed/seed.js';
 import { encodeCursor, listQueryOptions, listTickets } from '../tickets/ticket-list.js';
 import { ticketsQuery } from '../tickets/ticket-query.js';
@@ -170,6 +172,28 @@ async function main(): Promise<void> {
       }
       walls.sort((a, b) => a - b);
       results.push({ name: s.name, execMs, wallMs: walls[Math.floor(RUNS / 2)] ?? 0, rows });
+    }
+
+    // GET /stats (lead dashboard): the same service call the controller makes, per period.
+    const misc = new MiscService(db, new SystemClock(), undefined as never);
+    for (const [label, days] of [
+      ['week', 7],
+      ['quarter', 91],
+      ['half year', 182],
+      ['year', 365],
+    ] as const) {
+      const to = new Date();
+      const from = new Date(to.getTime() - days * 24 * 3_600_000);
+      const walls: number[] = [];
+      let created = 0;
+      for (let i = 0; i < RUNS; i++) {
+        const t0 = performance.now();
+        created = (await misc.stats(from, to)).created;
+        walls.push(performance.now() - t0);
+      }
+      walls.sort((a, b) => a - b);
+      const wallMs = walls[Math.floor(RUNS / 2)] ?? 0;
+      results.push({ name: `lead: GET /stats ${label}`, execMs: wallMs, wallMs, rows: created });
     }
 
     console.log('\n| scenario | rows | EXPLAIN exec ms | median wall ms |');

@@ -15,6 +15,13 @@
       "when": 1794904765453,
       "tag": "0001_bootstrap",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794927268761,
+      "tag": "0002_sudden_nomad",
+      "breakpoints": true
     }
   ]
 }

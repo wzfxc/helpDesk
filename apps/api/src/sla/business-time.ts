@@ -171,3 +171,57 @@ export function businessMinutesBetween(
   }
   return total / MINUTE;
 }
+
+/**
+ * Fast business-minute counter for many intervals inside one period (e.g. /stats).
+ * Precomputes the working windows of [from, to] once with running totals, then answers every
+ * interval with two binary searches instead of walking day by day. Identical results to
+ * `businessMinutesBetween(a, b, pauses)` for any a <= b inside the range (verified in tests):
+ * pauses are merged and their overlap with working time is subtracted.
+ */
+export function createBusinessMinutes(
+  rangeStart: Date,
+  rangeEnd: Date,
+  cal: BusinessCalendar = KYIV_CALENDAR,
+): (fromMs: number, toMs: number, pauses?: readonly Pause[]) => number {
+  const starts: number[] = [];
+  const ends: number[] = [];
+  const before: number[] = []; // working ms strictly before window i
+  const first = rangeStart.getTime();
+  const last = rangeEnd.getTime();
+  let acc = 0;
+  if (Number.isFinite(first) && last > first) {
+    for (const w of businessWindows(first, cal)) {
+      if (w.start > last) break;
+      starts.push(w.start);
+      ends.push(w.end);
+      before.push(acc);
+      acc += w.end - w.start;
+    }
+  }
+  /** Working ms from the range start up to instant t. */
+  const upTo = (t: number): number => {
+    let lo = 0;
+    let hi = starts.length - 1;
+    let i = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if ((starts[mid] as number) <= t) {
+        i = mid;
+        lo = mid + 1;
+      } else hi = mid - 1;
+    }
+    if (i < 0) return 0;
+    return (before[i] as number) + Math.min(t, ends[i] as number) - (starts[i] as number);
+  };
+  return (fromMs, toMs, pauses = []) => {
+    if (toMs <= fromMs) return 0;
+    let working = upTo(toMs) - upTo(fromMs);
+    for (const p of normalizePauses(pauses)) {
+      const s = Math.max(p.start, fromMs);
+      const e = Math.min(p.end, toMs);
+      if (e > s) working -= upTo(e) - upTo(s);
+    }
+    return working / MINUTE;
+  };
+}
