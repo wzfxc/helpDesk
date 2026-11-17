@@ -123,6 +123,38 @@ test('acceptance #13: filters live in the URL, survive reload and the Back butto
   expect(ticket.number).toBeGreaterThan(1000);
 });
 
+for (const sort of ['sla', '-created'] as const) {
+  test(`Enter opens the focused ticket even if a new ticket arrives (sort=${sort})`, async ({
+    browser,
+  }) => {
+    const agent = await Session.open(browser, AGENT(1));
+    await agent.page.goto(`/queue?sort=${sort}`);
+    const rows = agent.page.getByTestId('queue-row');
+    await expect(rows.first()).toBeVisible();
+    for (let i = 0; i < 3; i++) await agent.page.keyboard.press('j');
+    const focused = rows.nth(2);
+    await expect(focused).toHaveAttribute('data-active', 'true');
+    const id = await focused.getAttribute('data-row-id');
+    const before = await rows.count();
+
+    const customer = await Session.open(browser, CUSTOMER(1));
+    const fresh = await createTicketViaApi(customer.api, {
+      subject: `Arrives live ${uniqueToken()}`,
+      category: 'billing',
+      priority: 'urgent',
+    });
+    await expect(agent.page.locator(`[data-row-id="${fresh.id}"]`)).toBeVisible();
+    expect(await rows.count()).toBeGreaterThan(before - 1);
+
+    await expect(agent.page.locator(`[data-row-id="${id}"]`)).toHaveAttribute(
+      'data-active',
+      'true',
+    );
+    await agent.page.keyboard.press('Enter');
+    await expect(agent.page).toHaveURL(new RegExp(`/tickets/${id}$`));
+  });
+}
+
 test('keyboard shortcuts: j/k move, Enter opens, / focuses search, ? shows help', async ({
   browser,
 }) => {

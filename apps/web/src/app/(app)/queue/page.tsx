@@ -29,6 +29,7 @@ import { Button, inputClass } from '@/components/ui';
 import { api, ApiRequestError } from '@/lib/api';
 import { hotkeyAction } from '@/lib/hotkeys';
 import { useMe, useViews } from '@/lib/queries';
+import { moveFocus, resolveFocus } from '@/lib/queue-focus';
 import { flattenTickets } from '@/lib/ticket-cache';
 import { useNow } from 'next-intl';
 
@@ -205,30 +206,37 @@ function Queue() {
 
   // ----- selection, keyboard cursor -----
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [active, setActive] = useState(-1);
+  // The cursor is an id, not an index: live updates must not move it.
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
   const [report, setReport] = useState<BulkResponse | null>(null);
+  const lastIndexRef = useRef(0);
+  const focus = resolveFocus(
+    tickets.map((x) => x.id),
+    focusedId,
+    lastIndexRef.current,
+  );
+  const active = focus.index;
+  if (focus.index >= 0) lastIndexRef.current = focus.index;
   const ticketsRef = useRef(tickets);
   ticketsRef.current = tickets;
-  const activeRef = useRef(active);
-  activeRef.current = active;
+  const focusRef = useRef(focus);
+  focusRef.current = focus;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const action = hotkeyAction(e);
       if (!action) return;
       const rows = ticketsRef.current;
-      if (action === 'next') {
+      if (action === 'next' || action === 'prev') {
         e.preventDefault();
-        setActive((i) => Math.min(rows.length - 1, i + 1));
-      } else if (action === 'prev') {
-        e.preventDefault();
-        setActive((i) => Math.max(0, i - 1));
+        const ids = rows.map((x) => x.id);
+        setFocusedId(moveFocus(ids, focusRef.current, action === 'next' ? 1 : -1).id);
       } else if (action === 'open') {
-        const row = rows[activeRef.current];
-        if (row) {
+        const id = focusRef.current.id;
+        if (id) {
           e.preventDefault();
-          router.push(`/tickets/${row.id}`);
+          router.push(`/tickets/${id}`);
         }
       } else if (action === 'search') {
         e.preventDefault();
@@ -244,11 +252,11 @@ function Queue() {
     };
   }, [router]);
 
+  // scroll only when the cursor moves to another ticket, not when rows shift around it
   useEffect(() => {
-    document
-      .querySelector(`[data-row-index="${active.toString()}"]`)
-      ?.scrollIntoView({ block: 'nearest' });
-  }, [active]);
+    if (!focus.id) return;
+    document.querySelector(`[data-row-id="${focus.id}"]`)?.scrollIntoView({ block: 'nearest' });
+  }, [focus.id]);
 
   // ----- take next -----
   const [message, setMessage] = useState<string | null>(null);
@@ -653,6 +661,7 @@ function Queue() {
                 <tr
                   key={ticket.id}
                   data-row-index={i}
+                  data-row-id={ticket.id}
                   data-testid="queue-row"
                   data-active={i === active}
                   className={`border-b border-slate-200 dark:border-slate-800 ${

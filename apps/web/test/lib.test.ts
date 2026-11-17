@@ -5,6 +5,7 @@ import en from '../messages/en.json';
 import uk from '../messages/uk.json';
 import { clearDraft, draftKey, loadDraft, saveDraft } from '@/lib/drafts';
 import { hotkeyAction, isTypingTarget } from '@/lib/hotkeys';
+import { moveFocus, resolveFocus } from '@/lib/queue-focus';
 import {
   appendMessage,
   flattenTickets,
@@ -133,6 +134,45 @@ describe('hotkeys', () => {
     const textbox = document.createElement('div');
     textbox.setAttribute('role', 'textbox');
     expect(isTypingTarget(textbox)).toBe(true);
+  });
+});
+
+describe('queue focus follows ticket id', () => {
+  it('keeps the cursor on the same ticket when a new row is inserted above it', () => {
+    const before = ['a', 'b', 'c', 'd'];
+    const focus = moveFocus(
+      before,
+      moveFocus(before, moveFocus(before, { id: null, index: -1 }, 1), 1),
+      1,
+    );
+    expect(focus).toEqual({ id: 'c', index: 2 });
+    const after = ['new', ...before];
+    expect(resolveFocus(after, focus.id, focus.index)).toEqual({ id: 'c', index: 3 });
+  });
+
+  it('falls back to the neighbour when the focused ticket leaves the list', () => {
+    expect(resolveFocus(['a', 'b', 'd'], 'c', 2)).toEqual({ id: 'd', index: 2 });
+    expect(resolveFocus(['a', 'b'], 'c', 2)).toEqual({ id: 'b', index: 1 });
+    expect(resolveFocus([], 'c', 2)).toEqual({ id: null, index: -1 });
+  });
+
+  it('merging an SSE ticket.created event does not move the cursor', () => {
+    const t1 = makeTicket({ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' });
+    const t2 = makeTicket({ id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' });
+    const fresh = makeTicket({ id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' });
+    let pages: TicketPages = { pages: [{ items: [t1, t2], nextCursor: null }], pageParams: [null] };
+    const focus = { id: t2.id, index: 1 };
+    // new ticket sorts first (refetch result): same row stays focused
+    pages = { pages: [{ items: [fresh, t1, t2], nextCursor: null }], pageParams: [null] };
+    const ids = flattenTickets(pages).map((t) => t.id);
+    expect(resolveFocus(ids, focus.id, focus.index).id).toBe(t2.id);
+  });
+
+  it('moves within bounds', () => {
+    const ids = ['a', 'b'];
+    expect(moveFocus(ids, { id: 'b', index: 1 }, 1)).toEqual({ id: 'b', index: 1 });
+    expect(moveFocus(ids, { id: 'a', index: 0 }, -1)).toEqual({ id: 'a', index: 0 });
+    expect(moveFocus(ids, { id: null, index: -1 }, -1)).toEqual({ id: 'a', index: 0 });
   });
 });
 
