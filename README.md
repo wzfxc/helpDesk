@@ -25,8 +25,10 @@ docker compose up -d --build --wait
 Сервіси:
 
 - `web` — `http://localhost:3000` (проксує `/api/*` на `http://api:4000`, тому session cookie працює як same-origin без CORS).
-- `api` — `http://localhost:4000` (Swagger на `/docs`, проби `GET /health` і `GET /ready`).
-- `postgres` — `postgres:16` на порту `5432` (вкладення зберігаються в Docker volume `attachments`, при старті автоматично виконуються міграції Drizzle та сид `20 000` заявок, якщо БД порожня).
+- `api` — `http://127.0.0.1:4000` (лише loopback; Swagger на `/docs`, проби `GET /health` і `GET /ready`). Браузер ходить в api тільки через `web` (`/api/*`).
+- `postgres` — `postgres:16` на `127.0.0.1:5432` (лише loopback, `max_connections=100`; вкладення зберігаються в Docker volume `attachments`, при старті автоматично виконуються міграції Drizzle та сид `20 000` заявок, якщо БД порожня).
+
+> **Увага: паролі за замовчуванням.** `helpdesk/helpdesk` (БД) і демо-паролі сиду (`customer123`, `agent123`, `lead123`) публічні. Змініть `POSTGRES_PASSWORD` (і `DATABASE_URL`) та `SEED_*_PASSWORD` у `.env` перед будь-яким розгортанням, видимим не лише вам. Назовні опубліковано тільки `web`; Postgres і api прив’язані до `127.0.0.1`.
 
 Зупинка: `docker compose down` (або `docker compose down -v` для скидання БД і вкладень).
 
@@ -54,7 +56,7 @@ pnpm typecheck        # tsc --noEmit у всіх пакетах
 pnpm db:test:up       # одноразовий PostgreSQL 16 на порту 5433 (tmpfs)
 pnpm test             # shared (unit) + api (unit + інтеграційні на PostgreSQL 16) + web
 pnpm test:e2e         # Playwright проти запущеного docker compose стеку
-pnpm --filter @helpdesk/api bench   # бенчмарк запитів списку на 20 000 заявках
+pnpm --filter @helpdesk/api bench   # 34 сценарії списку + GET /stats (тиждень/квартал/півроку/рік) на 20 000 заявках, падає при > 200 мс
 ```
 
 ---
@@ -200,30 +202,30 @@ _(Поведінка зафіксована юніт-тестами в `apps/api
 Основні індекси (`apps/api/drizzle/0000_init.sql`):
 
 - Сортування і фільтри на `tickets`: `tickets_sla_sort_idx`, `tickets_created_idx`, `tickets_updated_idx`, `tickets_status_sla_idx`, `tickets_status_created_idx`, `tickets_assignee_status_sla_idx`, `tickets_category_status_sla_idx`, `tickets_category_created_idx`, `tickets_category_updated_idx`, `tickets_customer_updated_idx`, `tickets_customer_created_idx`, `tickets_tags_gin` (GIN), `tickets_parent_idx`.
-- Часткові індекси: `tickets_queue_free_idx` (`category, sla_sort_at, priority_rank, created_at WHERE assignee_id IS NULL AND status IN ('new', 'open')`), `tickets_breached_idx`, `tickets_next_due_idx`, `tickets_resolved_at_idx`.
+- Часткові індекси: `tickets_queue_free_idx` (`category, sla_sort_at, priority_rank, created_at WHERE assignee_id IS NULL AND status IN ('new', 'open')`), `tickets_breached_idx`, `tickets_next_due_idx`, `tickets_resolved_at_idx`, `tickets_assignee_resolved_idx` (`/stats`: закриті й вирішені по виконавцю), `messages_staff_reply_idx` (`/stats`: публічні відповіді по виконавцю).
 - Нотифікації / сесії / вкладення / черги: `notifications_user_unread_idx`, `attachments_orphan_idx`, `jobs_ready_idx`, `jobs_dedupe_uq`, `sla_pauses_open_uq`, `messages_author_client_id_uq`.
 
 ### Результати `bench` (`20 000` заявок, бюджет `< 200 мс`)
 
-Замір виконано командою `pnpm --filter @helpdesk/api bench` (5 прогонів на сценарій, PostgreSQL 16):
+Замір: `pnpm --filter @helpdesk/api bench` (5 прогонів на сценарій, PostgreSQL 16 у Docker на ноутбуці; 38 сценаріїв — 34 списки + 4 `GET /stats`). Скрипт завершується з кодом `1`, якщо будь-який сценарій повільніший за бюджет, CI його запускає. Вибірка:
 
-| Сценарій                        | Рядків | `EXPLAIN` exec (мс) | Медіана wall (мс) |
-| ------------------------------- | -----: | ------------------: | ----------------: |
-| `lead: default (sla)`           |     50 |                0.36 |              4.26 |
-| `lead: sort -created`           |     50 |                0.26 |              3.81 |
-| `lead: status=new,open,pending` |     50 |                0.29 |              3.77 |
-| `lead: tags=vip,refund`         |     50 |                2.55 |              5.86 |
-| `lead: combined filters`        |     50 |                0.87 |              3.96 |
-| `lead: search subject word`     |     50 |               14.56 |             15.69 |
-| `lead: search message text`     |     50 |               27.48 |             29.94 |
-| `lead: search number`           |      1 |                9.87 |             15.94 |
-| `lead: deep page (sla, ~10k)`   |     50 |                0.56 |              5.89 |
-| `agent: my open`                |     50 |                0.58 |              3.16 |
-| `agent: search`                 |     50 |                9.11 |             18.73 |
-| `customer: default (-updated)`  |     50 |                0.61 |              3.18 |
-| `customer: search`              |     34 |                9.57 |             11.57 |
+| Сценарій                       | Рядків | `EXPLAIN` exec (мс) | Медіана wall (мс) |
+| ------------------------------ | -----: | ------------------: | ----------------: |
+| `lead: default (sla)`          |     50 |                1.13 |             11.17 |
+| `lead: tags=vip,refund`        |     50 |                2.05 |             11.41 |
+| `lead: combined filters`       |     50 |                3.36 |             10.43 |
+| `lead: search subject word`    |     50 |               15.12 |             20.20 |
+| `lead: search message text`    |     50 |               59.50 |             43.20 |
+| `lead: search frequent word`   |     50 |               45.73 |             49.86 |
+| `lead: deep page (sla, ~10k)`  |     50 |                0.63 |              6.86 |
+| `agent: my open`               |     50 |                0.65 |              6.13 |
+| `customer: search`             |     34 |               21.27 |             25.46 |
+| **`lead: GET /stats` тиждень** |    767 |                   — |             59.79 |
+| **`lead: GET /stats` квартал** | 10 162 |                   — |            172.83 |
+| **`lead: GET /stats` півроку** | 20 000 |                   — |            179.97 |
+| **`lead: GET /stats` рік**     | 20 000 |                   — |            176.90 |
 
-Найгірша медіана по всіх 34 сценаріях: **`29.94 мс`** (при бюджеті `200 мс`).
+Найгірша медіана: **~178 мс** (`/stats`) при бюджеті `200 мс`; на спокійній машині `/stats` дає `120–160 мс`, тож запас невеликий (див. «Відомі обмеження»). До оптимізації `/stats` за півроку/рік займав `1.3–1.5 с`: основну частку (`~1 с`) складав підрахунок робочих хвилин у JS по кожній заявці. Тепер `createBusinessMinutes` (`apps/api/src/sla/business-time.ts`) рахує префіксні суми робочих вікон і бінарним пошуком (результат ідентичний `businessMinutesBetween`, перевірено тестом), заявки без пауз передаються одним рядком JSON-масивів, а часткові індекси `tickets_assignee_resolved_idx` і `messages_staff_reply_idx` (міграція `0002`) прискорюють лічильники по виконавцях.
 
 ---
 
@@ -279,17 +281,45 @@ _(Поведінка зафіксована юніт-тестами в `apps/api
 - `429 rate_limited` містить `retryAfterSeconds` і заголовок `Retry-After`.
 
 Коди помилок (`ERROR_CODES` у `packages/shared/src/errors.ts`):
-`validation_error`, `invalid_json`, `invalid_cursor`, `bad_request`, `unauthorized`, `invalid_credentials`, `forbidden`, `not_found`, `version_conflict`, `invalid_transition`, `invalid_assignee`, `ticket_closed`, `payload_too_large`, `unsupported_media_type`, `too_many_attachments`, `attachment_unavailable`, `no_tickets_available`, `rate_limited`, `internal_error`.
+`validation_error`, `invalid_json`, `invalid_cursor`, `bad_request`, `unauthorized`, `invalid_credentials`, `forbidden`, `not_found`, `version_conflict`, `invalid_transition`, `invalid_assignee`, `ticket_closed`, `payload_too_large`, `unsupported_media_type`, `too_many_attachments`, `attachment_unavailable`, `attachment_quota_exceeded`, `no_tickets_available`, `rate_limited`, `service_unavailable`, `internal_error`.
 
-Типи вкладень (`POST /attachments`) перевіряються за вмістом файлу (magic bytes / UTF-8 перевірка тексту в `detect-type.ts`), а не за розширенням: дозволені `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `application/pdf`, `text/plain` до `10 МБ`, до `5` на повідомлення. Віддаються з `X-Content-Type-Options: nosniff` і `Content-Security-Policy: default-src 'none'; sandbox`.
+Помилки `5xx` — лише несправність сервера: клієнтський ввід (у т.ч. `\u0000` у текстах, надмірні тіла, зайві multipart-частини) завжди дає `4xx`. Помилки PostgreSQL класу `22` (некоректні дані) мапляться на `400 validation_error`; скасований за `statement_timeout` запит або відсутність вільного з’єднання з пулу — на `503 service_unavailable` із `Retry-After`.
+
+Типи вкладень (`POST /attachments`) перевіряються за вмістом файлу (magic bytes / UTF-8 перевірка тексту в `detect-type.ts`), а не за розширенням: дозволені `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `application/pdf`, `text/plain` до `10 МБ` (= `10 * 1024 * 1024` байт, рівно такий файл проходить), до `5` на повідомлення. Віддаються з `X-Content-Type-Options: nosniff` і `Content-Security-Policy: default-src 'none'; sandbox`.
+
+### Ліміти
+
+Усі значення зберігаються в одному місці — `packages/shared/src/limits.ts` (`LIMITS`) — і звідти ж беруться api, web (клієнтська перевірка та тексти помилок) і тести. Порушення ліміту — `4xx` у єдиному форматі помилки, ніколи `5xx` і не мовчазне обрізання.
+
+| Ліміт                                 | Де задано                                                            | Значення                                                                                                                                                                                                                                            | Результат                                      | Тест                                      |
+| ------------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------------- |
+| Розмір вкладення                      | `LIMITS.attachmentMaxBytes`, multer `fileSize`, web, Next            | `10 МБ = 10 * 1024 * 1024` байт                                                                                                                                                                                                                     | `413 payload_too_large`, файл не пишеться      | `limits.test.ts`, `e2e/limits.spec.ts`    |
+| Вкладень на повідомлення              | `AttachmentIdsSchema`                                                | `5`, без дублікатів                                                                                                                                                                                                                                 | `400 validation_error`                         | `limits.test.ts`                          |
+| Чужі / вже прив’язані вкладення       | `bindAttachments`                                                    | лише власні й неприв’язані                                                                                                                                                                                                                          | `422 attachment_unavailable`                   | `limits.test.ts`                          |
+| Типи вкладень                         | `detect-type.ts`                                                     | png, jpeg, gif, webp, pdf, text                                                                                                                                                                                                                     | `415`                                          | `attachments.test.ts`                     |
+| multipart (busboy)                    | multer `limits`                                                      | `files 1`, `parts 6`, `fields 5`, значення поля `1 КБ`, ім’я поля `100 Б`, `50` заголовків                                                                                                                                                          | `400`                                          | `limits.test.ts`                          |
+| Неприв’язані вкладення на користувача | `AttachmentsService.assertQuota` (під advisory lock)                 | `20` файлів / `100 МБ`; очищаються за `24 год`                                                                                                                                                                                                      | `422 attachment_quota_exceeded`                | `limits.test.ts` (у т.ч. паралельні)      |
+| Тіло JSON                             | `app.setup.ts`, `LIMITS.jsonBodyMaxBytes`                            | `256 КБ` на всіх ендпоінтах, окрім `POST /attachments`; `urlencoded`-парсера немає навмисно (форми не розбираються)                                                                                                                                 | `413 payload_too_large`                        | `limits.test.ts`, `e2e/limits.spec.ts`    |
+| Next-проксі                           | `apps/web/src/middleware.ts` (за `Content-Length`), `next.config.ts` | завантаження ≤ `10 МБ + 64 КБ`, решта ≤ `256 КБ`; `middlewareClientMaxBodySize: 25mb` лише як страховка                                                                                                                                             | `413` у форматі api (а не `500`)               | `e2e/limits.spec.ts`                      |
+| Довжини текстів                       | Zod у `packages/shared/src/schemas`                                  | тема `200`; тіло заявки/повідомлення `20 000`; шаблон: назва `120`, текст `10 000`; назва представлення `80`, його query `2000`; коментар оцінки `2000`; тег `40` × `20`; `q` `200`; cursor `1000`; email `254`; пароль `200`; `version` ≤ `2^31-1` | `400 validation_error`                         | `limits.test.ts`, `schemas.test.ts`       |
+| Нульовий байт `\u0000`                | `safeString()` у shared + мапінг PG `22xxx → 400`                    | заборонений у всіх рядках (тіла, query, email, пароль)                                                                                                                                                                                              | `400 validation_error`                         | `fuzz.test.ts`                            |
+| Пагінація                             | `TicketListQuerySchema`                                              | `limit` `1..100`, за замовчуванням `50`                                                                                                                                                                                                             | `400` для `0`, від’ємного, нечислового, `>100` | `limits.test.ts`, `list.test.ts`          |
+| Bulk                                  | `BulkRequestSchema`                                                  | `1..200` унікальних id; дублікати → `400` (не ігноруються); теги — ті самі ліміти, що й у `PATCH`                                                                                                                                                   | `400 validation_error`                         | `limits.test.ts`, `queue.test.ts`         |
+| Вхід (rate limit)                     | `AuthService.assertNotLimited`                                       | `5` невдач / `15 хв` на пару `(email, IP)`; `20` на акаунт з усіх IP; `200` на IP з усіх акаунтів                                                                                                                                                   | `429` + `Retry-After`                          | `ratelimit.test.ts`, `e2e/limits.spec.ts` |
+| Throttle-и користувача                | `RateLimiter` (`LIMITS.rate`)                                        | заявки `60/10 хв`; повідомлення `60/хв`; завантаження `60/10 хв`; typing `1/с` на заявку                                                                                                                                                            | `429` + `Retry-After`                          | `ratelimit.test.ts`                       |
+| SSE                                   | `EventsService.subscribe`                                            | `8` одночасних потоків на користувача; heartbeat `20 с`; replay `500` подій                                                                                                                                                                         | `429` + `Retry-After`                          | `events.test.ts`                          |
+| Запити до БД                          | `createPool` (`DB_*_TIMEOUT_MS`)                                     | `statement_timeout 10 с`, `idle_in_transaction 15 с`, очікування з’єднання `10 с`; пул `20` (+1 LISTEN +2 міграції) < `max_connections 100`                                                                                                         | `503 service_unavailable`                      | `db-limits.test.ts`                       |
+| Швидкодія `GET /stats`                | `MiscService.stats`                                                  | `< 200 мс` на `20 000` заявок (тиждень … рік)                                                                                                                                                                                                       | бенчмарк падає                                 | `pnpm --filter @helpdesk/api bench`       |
+
+**Вхід за проксі.** Усі браузери звертаються до api через контейнер `web`, тому справжня адреса клієнта приходить в `X-Forwarded-For` (Next його додає). `trust proxy` довіряє заголовку лише приватним hop-ам (`TRUST_PROXY`, за замовчуванням `loopback, linklocal, uniquelocal`); порт api на хості закрито на `127.0.0.1`. Лічильник рахується по парі `(email, IP)`: 10 невдалих входів `customer1` не блокують `lead`, успішний вхід знімає лише лічильник своєї пари. Компроміс: щоб обмежити розподілений підбір, діє грубий ліміт `20` невдач на акаунт з будь-яких адрес, тож зловмисник теоретично може заблокувати чужий акаунт на вікно `15 хв`.
 
 ---
 
 ## 10. Прийняті рішення та розширення API
 
-- **Same-origin проксі у Next.js:** `apps/web/next.config.ts` проксує `/api/*` на `API_INTERNAL_URL`, що дозволяє використовувати `httpOnly`, `SameSite=Lax` cookie без CORS. Вимкнено стиснення (`compress: false`), щоб не буферизувати SSE, і збільшено `experimental.middlewareClientMaxBodySize: '25mb'`, щоб проксі не обрізав валідні 10 МБ завантаження на дефолтному ліміті 10 МБ.
+- **Same-origin проксі у Next.js:** `apps/web/next.config.ts` проксує `/api/*` на `API_INTERNAL_URL`, що дозволяє використовувати `httpOnly`, `SameSite=Lax` cookie без CORS. Вимкнено стиснення (`compress: false`), щоб не буферизувати SSE, і збільшено `experimental.middlewareClientMaxBodySize: '25mb'`, щоб проксі не обрізав валідні 10 МБ завантаження на дефолтному ліміті 10 МБ. Для більших тіл `apps/web/src/middleware.ts` відповідає `413` за `Content-Length` ще до проксі: без цього завантаження `30 МБ` через Next закінчувалось `500` (`socket hang up`).
 - **SSE без Redis із `Last-Event-ID` replay:** використано `PostgreSQL LISTEN/NOTIFY` на каналі `hd_events` із короткими сигналами (лише id) та кільцевим буфером у пам’яті на `500` останніх доменних сигналів. При підключенні з заголовком `Last-Event-ID` пропущені події (крім ефемерного `typing`) досилаються клієнту, а кожен інстанс `api` будує персоналізований payload через `ticketScope` і `messageVisibility`, тому внутрішня нотатка фізично не може потрапити до клієнта.
-- **Атомарний rate-limit входу:** таблиця `login_attempts` під транзакційними advisory locks (`login:email:...` та `login:ip:...`) перевіряє та записує спробу _до_ перевірки Argon2-хешу (плюс dummy-hash для неіснуючих email проти timing attack).
+- **Атомарний rate-limit входу:** таблиця `login_attempts` під транзакційними advisory locks (`login:email:...` та `login:ip:...`) перевіряє та записує спробу (по парі `(email, IP)`, див. «Ліміти») _до_ перевірки Argon2-хешу (плюс dummy-hash для неіснуючих email проти timing attack).
 - **FTS `simple`:** замість мовно-залежного стемінгу обрано словник `simple` із префіксами `:*`, оскільки заявки містять змішані українські та англійські тексти і точні номери.
 - **Розширення API понад базову таблицю ТЗ:**
   - `POST /tickets/:id/resolve` та `POST /tickets/:id/rating` — кнопка «Проблема вирішена» й оцінка 1–5 від клієнта;
@@ -304,14 +334,21 @@ _(Поведінка зафіксована юніт-тестами в `apps/api
 
 ## Відомі обмеження
 
-Функціональні й тестові обмеження попереднього етапу усунено:
+Чесний перелік того, що не зроблено або зроблено частково.
 
-- `GET /events` підтримує `Last-Event-ID` replay із пер-користувацькою фільтрацією прав доступу (`apps/api/src/events/events.service.ts`).
-- SLA-календар підтримує конфігуровані святкові дати через `SLA_HOLIDAYS` (`apps/api/src/sla/business-time.ts`, `sla.service.ts`).
-- Сценарій приймання #11 (автозакриття `resolved` → `closed` та створення дочірньої заявки при відповіді клієнта) покрито в Playwright E2E (`e2e/tests/lifecycle.spec.ts`).
-- Юніт- та компонент-тести `apps/web` (Vitest + Testing Library + MSW) увімкнено без `passWithNoTests`, додано E2E-покриття для `uk`/`en` локалізації (`e2e/tests/i18n.spec.ts`) і повернення фокуса в поле відповіді (`Composer`).
+**Не зроблено**
 
-Залишаються лише свідомі архітектурні/платформені особливості:
+- **Розподіленість.** Throttle-и (`RateLimiter`), ліміт SSE-потоків і буфер replay `Last-Event-ID` живуть у пам’яті одного процесу `api`. З кількома репліками ліміти діють на кожну окремо, а клієнт, перепідключений до іншої репліки, не отримає пропущених подій. Лічильники входу (`login_attempts`) лежать у БД і працюють коректно.
+- **Пошук без морфології:** FTS зі словником `simple` шукає лише точні й префіксні збіги слів (без лематизації української/англійської).
+- **Немає CAPTCHA / прогресивної затримки** на вході: тільки жорсткі `429`.
 
-- **Пошук без морфології:** FTS зі словником `simple` шукає точні та префіксні збіги слів (без лематизації української/англійської).
-- **Graceful `SIGTERM` на Windows:** тест `apps/api/test/shutdown.test.ts` пропускається на `win32` (де `SIGTERM` жорстко вбиває процес); виконується в Linux CI і перевірявся в Docker (`docker compose stop api` → код `0`).
+**Зроблено частково**
+
+- **`GET /stats` має невеликий запас до бюджету.** Півроку/рік на `20 000` заявок — `120–180 мс` при ліміті `200 мс` (було `1.3–1.5 с`), час росте лінійно з кількістю заявок у періоді; кешу чи попередньо агрегованої таблиці немає, тому на значно більших даних знадобиться матеріалізація.
+- **Блокування входу — компроміс.** Лічильник по `(email, IP)` не дає чужим помилкам блокувати вас, але грубий ліміт `20` невдач на акаунт з усіх адрес дозволяє зловмиснику заблокувати акаунт на `15 хв`. `trust proxy` довіряє приватним діапазонам, а не конкретній адресі контейнера `web`; захист — loopback-публікація порту api.
+- **Завантаження буферизуються в пам’яті** (multer `memoryStorage`, до `10 МБ` на запит, перевищення обривається без запису на диск). Паралельні завантаження обмежені лише throttle-ом `60/10 хв` на користувача, ліміту сумарної пам’яті немає.
+- **Файли-сироти.** Якщо процес впаде між записом файлу та вставкою рядка в БД, файл без запису залишиться на диску: очищення (`attachment-cleanup`) видаляє лише рядки БД і файли за ними.
+- **Next-проксі** відсікає надто великі тіла лише за заголовком `Content-Length`; chunked-запит без цього заголовка понад `25 МБ` закінчиться помилкою проксі (`500`), а не `413`.
+- **SSE понад `8` вкладок:** зайві потоки отримують `429`, і `EventSource` не перепідключається автоматично (у таких вкладках немає живих оновлень до перезавантаження).
+- **Graceful `SIGTERM` на Windows:** `apps/api/test/shutdown.test.ts` пропускається на `win32`; виконується в Linux CI і перевірявся в Docker (`docker compose stop api` → код `0`).
+- **E2E для фокуса черги за сортуванням SLA** чекає фіксований час на обробку живої події (нова заявка може лежати за межами першої сторінки), а не конкретну ознаку в DOM.
