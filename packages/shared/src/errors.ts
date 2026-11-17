@@ -11,6 +11,7 @@ export const ERROR_CODES = [
   'not_found',
   'version_conflict',
   'invalid_transition',
+  'invalid_assignee',
   'ticket_closed',
   'payload_too_large',
   'unsupported_media_type',
