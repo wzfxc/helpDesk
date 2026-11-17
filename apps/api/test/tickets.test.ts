@@ -223,6 +223,24 @@ describe('update', () => {
     expect(self.status).toBe(200);
   });
 
+  it('agents cannot take a ticket already assigned to a colleague', async () => {
+    const colleague = await createUser(ctx.db, 'agent', ['billing']);
+    const colleagueAgent = await loginAs(ctx, colleague);
+    const t = await createTicket(w.as.customer);
+    const taken = await colleagueAgent
+      .patch(`/tickets/${t.id}`)
+      .send({ version: 0, assigneeId: colleague.id });
+    expect(taken.status).toBe(200);
+    const steal = await w.as.billingAgent
+      .patch(`/tickets/${t.id}`)
+      .send({ version: 1, assigneeId: w.billingAgent.id });
+    expect(steal.status).toBe(403);
+    const unassign = await w.as.billingAgent
+      .patch(`/tickets/${t.id}`)
+      .send({ version: 1, assigneeId: null });
+    expect(unassign.status).toBe(403);
+  });
+
   it('assigning notifies the assignee', async () => {
     const t = await createTicket(w.as.customer);
     await w.as.lead.patch(`/tickets/${t.id}`).send({ version: 0, assigneeId: w.billingAgent.id });

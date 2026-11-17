@@ -213,7 +213,7 @@ export class TicketMutations {
 
   /**
    * lead: may assign any staff member or unassign.
-   * agent: may take a ticket (assign self) or release their own; never assign others.
+   * agent: may take an unassigned ticket or release their own; never (re)assign others' tickets.
    */
   private async assertCanAssign(
     db: DbOrTx,
@@ -222,8 +222,10 @@ export class TicketMutations {
     assigneeId: string | null,
   ): Promise<void> {
     if (actor?.role === 'agent') {
+      // Take a free ticket or release your own; never steal a colleague's ticket.
       const ok =
-        assigneeId === actor.id || (assigneeId === null && current.assigneeId === actor.id);
+        (assigneeId === actor.id && current.assigneeId === null) ||
+        (assigneeId === null && current.assigneeId === actor.id);
       if (!ok) throw forbidden('Agents can only assign tickets to themselves');
     }
     if (assigneeId === null) return;
