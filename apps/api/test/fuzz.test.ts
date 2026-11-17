@@ -141,12 +141,10 @@ describe('no 5xx on malformed input', () => {
       const res = await w.as.lead.get('/tickets').query({ [q]: NUL });
       expect(res.status, q).toBeLessThan(500);
     }
-    const up = await w.as.customer
-      .post('/attachments')
-      .attach('file', Buffer.from('hello'), {
-        filename: 'a\u0000b.txt',
-        contentType: 'text/plain',
-      });
+    const up = await w.as.customer.post('/attachments').attach('file', Buffer.from('hello'), {
+      filename: 'a\u0000b.txt',
+      contentType: 'text/plain',
+    });
     expect(up.status).toBeLessThan(500);
   });
 
