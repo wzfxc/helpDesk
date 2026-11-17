@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { eq, sql } from 'drizzle-orm';
 import type {
   CreateTicket,
+  Priority,
   RatingInput,
   Ticket,
   TicketDetail,
@@ -62,7 +63,10 @@ export class TicketsService {
   async createInTx(
     tx: DbOrTx,
     user: AuthUser,
-    input: Pick<CreateTicket, 'subject' | 'category' | 'priority' | 'body' | 'attachmentIds'>,
+    input: Pick<CreateTicket, 'subject' | 'category' | 'body' | 'attachmentIds'> & {
+      /** Customers pick low..high; a follow-up of a closed ticket inherits its priority. */
+      priority: Priority;
+    },
     parentTicketId: string | null,
     clientMessageId: string | null = null,
   ): Promise<{ ticketId: string; messageId: string; signals: RealtimeSignal[] }> {

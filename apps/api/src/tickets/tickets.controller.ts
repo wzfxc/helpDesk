@@ -1,7 +1,11 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
+  CreateMessageResponseSchema,
+  CreateMessageSchema,
   CreateTicketSchema,
+  type CreateMessage,
+  type CreateMessageResponse,
   IdSchema,
   RatingInputSchema,
   TicketDetailSchema,
@@ -18,12 +22,16 @@ import type { AuthUser } from '../auth/auth.types.js';
 import { CurrentUser, Roles } from '../auth/decorators.js';
 import { ApiZodBody, ApiZodResponse } from '../common/openapi.js';
 import { zod } from '../common/zod.pipe.js';
+import { MessagesService } from './messages.service.js';
 import { TicketsService } from './tickets.service.js';
 
 @ApiTags('tickets')
 @Controller('tickets')
 export class TicketsController {
-  constructor(private readonly tickets: TicketsService) {}
+  constructor(
+    private readonly tickets: TicketsService,
+    private readonly messages: MessagesService,
+  ) {}
 
   @Post()
   @Roles('customer')
@@ -56,6 +64,18 @@ export class TicketsController {
     @Body(zod(UpdateTicketSchema)) body: UpdateTicket,
   ): Promise<Ticket> {
     return this.tickets.update(user, id, body);
+  }
+
+  /** Public reply or internal note; idempotent on clientMessageId. */
+  @Post(':id/messages')
+  @ApiZodBody(CreateMessageSchema)
+  @ApiZodResponse(201, CreateMessageResponseSchema)
+  createMessage(
+    @CurrentUser() user: AuthUser,
+    @Param('id', zod(IdSchema)) id: string,
+    @Body(zod(CreateMessageSchema)) body: CreateMessage,
+  ): Promise<CreateMessageResponse> {
+    return this.messages.create(user, id, body);
   }
 
   /** Customer: "Problem solved" (extension). */
