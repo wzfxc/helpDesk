@@ -26,12 +26,14 @@
     "cookie-parser": "1.4.7",
     "date-fns": "4.1.0",
     "drizzle-orm": "0.44.0",
+    "express": "5.1.0",
     "pg": "8.16.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "zod": "^4.1.0"
   },
   "devDependencies": {
+    "@nestjs/testing": "11.1.0",
     "@swc/core": "^1.13.0",
     "@types/cookie-parser": "1.4.9",
     "@types/express": "^5.0.0",

@@ -66,6 +66,19 @@ export default tseslint.config(
     },
   },
   {
+    // supertest/Playwright expose response bodies as `any`; tests assert on their shape directly.
+    // `no-explicit-any` stays on: tests may not introduce `any` themselves.
+    files: ['apps/api/test/**/*.ts', 'apps/api/src/**/*.test.ts', 'e2e/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/no-non-null-assertion': 'off',
+    },
+  },
+  {
     files: ['**/*.mjs', '**/*.cjs', '**/*.js'],
     ...tseslint.configs.disableTypeChecked,
   },
