@@ -2,19 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type TestAgent from 'supertest/lib/agent.js';
 import { detectMimeType, isPlainText, sanitizeFilename } from '../src/attachments/detect-type.js';
 import { createTestApp, type TestContext } from './app.js';
 import { resetDb } from './db.js';
-import { createTicket, createWorld, type World } from './fixtures.js';
+import { createTicket, createWorld, PNG, upload, type World } from './fixtures.js';
 
 let ctx: TestContext;
 let w: World;
 
-export const PNG = Buffer.from(
-  '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8cfc0f01f0005000201a5d2b8e40000000049454e44ae426082',
-  'hex',
-);
 const EXE = Buffer.concat([
   Buffer.from('MZ\x90\x00\x03\x00\x00\x00', 'binary'),
   Buffer.alloc(200, 0),
@@ -31,10 +26,6 @@ beforeEach(async () => {
 afterAll(async () => {
   await ctx.close();
 });
-
-export async function upload(agent: TestAgent, buf: Buffer, name: string) {
-  return agent.post('/attachments').attach('file', buf, { filename: name });
-}
 
 describe('type detection (unit)', () => {
   it('detects by content, not extension', () => {

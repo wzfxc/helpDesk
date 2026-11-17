@@ -71,3 +71,13 @@ export async function createTicket(
     throw new Error(`create failed ${res.status} ${JSON.stringify(res.body)}`);
   return res.body as CreatedTicket;
 }
+
+/** 1x1 PNG */
+export const PNG = Buffer.from(
+  '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8cfc0f01f0005000201a5d2b8e40000000049454e44ae426082',
+  'hex',
+);
+
+export async function upload(agent: TestAgent, buf: Buffer, name: string) {
+  return agent.post('/attachments').attach('file', buf, { filename: name });
+}
